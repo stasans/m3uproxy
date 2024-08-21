@@ -107,6 +107,21 @@ func ValidateToken(username, token string) bool {
 	return true
 }
 
+func ValidateSingleToken(token string) bool {
+	tokenStoreMux.Lock()
+	defer tokenStoreMux.Unlock()
+	expiry, exists := tokenValidityCache[token]
+	if time.Now().After(expiry) {
+		delete(tokenValidityCache, token)
+		delete(tokenUserCache, token)
+		return false
+	}
+	if !exists {
+		return false
+	}
+	return true
+}
+
 func InvalidateToken(token string) {
 	tokenStoreMux.Lock()
 	defer tokenStoreMux.Unlock()
