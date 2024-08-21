@@ -1,0 +1,15 @@
+#EXTM3U
+#EXTINF:-1 group-title="TV" tvg-id="Channel 1" tvg-logo="logo1.png",Channel 1
+#EXTVLCOPT:http-user-agent=Firefox
+#EXTVLCOPT:http-referrer=test
+#KODIPROP:inputstream=inputstream.adaptive
+#KODIPROP:inputstream.adaptive.manifest_ty
+http://example.com/channel1.m3u8
+#EXTINF:-1 group-title="TV" tvg-id="Channel 2" tvg-logo="logo1.png",Channel 2
+#EXTVLCOPT:http-user-agent=Firefox
+#EXTVLCOPT:http-referrer=test
+http://example.com/channel2.m3u8
+#EXTINF:-1 group-title="TV" tvg-id="Channel 3" tvg-logo="logo1.png",Channel 3
+#KODIPROP:inputstream=inputstream.adaptive
+#KODIPROP:inputstream.adaptive.manifest_ty
+http://example.com/channel3.m3u8
