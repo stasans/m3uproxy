@@ -89,6 +89,17 @@ func GenerateToken(username, password string) (string, error) {
 	return token, nil
 }
 
+func GetActiveToken(user string) string {
+	tokenStoreMux.Lock()
+	defer tokenStoreMux.Unlock()
+	for token, u := range tokenUserCache {
+		if u == user {
+			return token
+		}
+	}
+	return ""
+}
+
 func ValidateToken(username, token string) bool {
 	tokenStoreMux.Lock()
 	defer tokenStoreMux.Unlock()

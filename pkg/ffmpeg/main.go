@@ -52,7 +52,7 @@ func Cleanup() {
 func ServeHLS(w http.ResponseWriter, r *http.Request) {
 	// Get the requested file path
 	vars := mux.Vars(r)
-	path := vars["stream"]
+	path := vars["path"]
 
 	// Set the appropriate content type for .m3u8 and .ts files
 	if filepath.Ext(path) == ".m3u8" {

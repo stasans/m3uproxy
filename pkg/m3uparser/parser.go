@@ -16,11 +16,10 @@ type M3UTag struct {
 
 // M3UEntry represents a single entry in the M3U file.
 type M3UEntry struct {
-	URI       string            // The URI of the media file.
-	Duration  int               // The duration of the media in seconds (if available).
-	Title     string            // The title of the media (if available).
-	keyValues map[string]string // Additional key-value pairs associated with the entry.
-	Tags      []M3UTag          // Additional tags associated with the entry.
+	URI      string   `json:"uri"`      // The URI of the media.
+	Duration int      `json:"duration"` // The duration of the media in seconds (if available).
+	Title    string   `json:"title"`    // The title of the media (if available).
+	Tags     []M3UTag `json:"tags"`     // Additional tags associated with the entry.
 }
 
 // M3UPlaylist represents the parsed M3U playlist.
@@ -152,52 +151,11 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 			if tag.Tag == "EXTINF" {
 				// Handle EXTINF tag
 				currentEntry = &M3UEntry{
-					keyValues: make(map[string]string),
-					Tags:      []M3UTag{tag},
+					Tags: []M3UTag{tag},
 				}
 				parts := strings.SplitN(line[8:], ",", 2)
 				if len(parts) > 0 {
 					currentEntry.Duration = parseDuration(parts[0])
-					if currentEntry.Duration == -1 {
-						// Extract the channel metadata, such as group-title, tvg-id, tvg-logo, etc
-
-						properties := strings.TrimSpace(parts[0][len("-1"):])
-
-						var key string
-						var currValue string
-						var inQuotes bool
-						for i := 0; i < len(properties); i++ {
-
-							if properties[i] == ' ' && key == "" {
-								continue
-							}
-
-							if properties[i] == '"' {
-
-								if inQuotes {
-									currentEntry.keyValues[key] = currValue
-									currValue = ""
-									key = ""
-									inQuotes = false
-									continue
-								}
-
-								inQuotes = true
-								continue
-
-							}
-
-							if properties[i] == '=' {
-								key = currValue
-								currValue = ""
-								continue
-							}
-
-							currValue += string(properties[i])
-						}
-
-					}
-
 				}
 				if len(parts) > 1 {
 					currentEntry.Title = parts[1]
@@ -207,8 +165,7 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 
 			if tag.Tag == "EXT-X-STREAM-INF" {
 				currentEntry = &M3UEntry{
-					keyValues: make(map[string]string),
-					Tags:      []M3UTag{tag}, // Add the EXT-X-STREAM-INF tag
+					Tags: []M3UTag{tag}, // Add the EXT-X-STREAM-INF tag
 				}
 				continue
 			}
@@ -262,12 +219,14 @@ func parseTag(line string) (M3UTag, error) {
 	return M3UTag{parts[0], parts[1]}, nil
 }
 
-func (entry *M3UEntry) Get(key string) string {
-	return entry.keyValues[key]
-}
-
-func (entry *M3UEntry) Set(key, value string) {
-	entry.keyValues[key] = value
+func (entry *M3UEntry) GetTag(tag string) []M3UTag {
+	var result []M3UTag
+	for _, t := range entry.Tags {
+		if t.Tag == tag {
+			result = append(result, t)
+		}
+	}
+	return result
 }
 
 func (entry *M3UEntry) GetTags() []M3UTag {
