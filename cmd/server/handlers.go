@@ -1,23 +1,23 @@
 package server
 
 import (
-	"io"
 	"log"
 	"m3u-proxy/pkg/channelstore"
 	"m3u-proxy/pkg/ffmpeg"
 	"m3u-proxy/pkg/userstore"
 	"net/http"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/gorilla/mux"
 )
 
-func setupHandlers() {
+func setupHandlers() *mux.Router {
 	r := mux.NewRouter()
 	r.HandleFunc("/channels.m3u", channelsHandler).Methods("GET")
 	r.HandleFunc("/epg.xml", epgHandler).Methods("GET")
+	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("GET")
 
 	if ffmpeg.Initialize() == nil {
 		log.Printf("FFmpeg initialized successfully. Registering /m3uproxy_internal for streams.\n")
@@ -37,6 +37,7 @@ func setupHandlers() {
 		http.Redirect(w, r, "/channels.m3u", http.StatusMovedPermanently)
 	})
 	http.Handle("/", r)
+	return r
 }
 
 func handleStreamError(w http.ResponseWriter, r *http.Request, msg string) {
@@ -59,40 +60,9 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channelID, err := strconv.Atoi(vars["channelId"])
-	if err != nil {
-		http.Error(w, "Invalid channel ID", http.StatusBadRequest)
-		log.Printf("Invalid channel ID: %s\n", vars["channelID"])
-		return
+	if channelstore.ChannelHandleStream(w, r) != nil {
+		handleStreamError(w, r, "Channel not found")
 	}
-
-	path := vars["path"]
-	serviceURL, err := channelstore.GetChannelStreamURL(channelID, path, r.URL.RawQuery)
-	if err != nil {
-		return
-	}
-
-	// Create a new request to the service URL
-	// and copy the headers from the original request
-	req, _ := http.NewRequest("GET", serviceURL, r.Body)
-	req.Header.Add("User-Agent", r.Header.Get("User-Agent"))
-	req.Header.Add("Referer", r.Header.Get("Referer"))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		log.Printf("Failed to fetch channel: %v\n", channelID)
-		handleStreamError(w, r, "Failed to fetch channel")
-		return
-	}
-
-	defer resp.Body.Close()
-
-	for k, v := range resp.Header {
-		w.Header().Set(k, strings.Join(v, ","))
-	}
-
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
 }
 
 func channelsHandler(w http.ResponseWriter, r *http.Request) {

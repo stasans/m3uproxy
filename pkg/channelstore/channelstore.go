@@ -1,12 +1,40 @@
+/*
+Copyright © 2024 Alexandre Pires
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
 package channelstore
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"log"
 	"m3u-proxy/pkg/m3uparser"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 type Channel struct {
@@ -20,9 +48,10 @@ type ChannelsCacheData struct {
 }
 
 var (
-	channels       = make([]Channel, 0)
-	channelsCache  = make([]ChannelsCacheData, 0)
-	defaultTimeout = 3
+	channels         = make([]Channel, 0)
+	channelsCache    = make([]ChannelsCacheData, 0)
+	defaultTimeout   = 3
+	channelsStoreMux sync.Mutex
 )
 
 func validateURL(urlPath string) bool {
@@ -30,30 +59,32 @@ func validateURL(urlPath string) bool {
 	return err == nil
 }
 
-func validateChannel(channel Channel, checkOnline bool, timeout int) bool {
+func validateChannel(channel Channel) bool {
 	if channel.Entry.URI == "" || channel.Name == "" {
 		return false
 	}
 	if !validateURL(channel.Entry.URI) {
 		return false
 	}
-	if checkOnline {
-		client := http.Client{
-			Timeout: time.Duration(timeout) * time.Second,
-		}
-		req, err := client.Get(channel.Entry.URI)
-		if err != nil {
-			return false
-		}
-		if req.StatusCode != http.StatusOK {
-			return false
-		}
-	}
-
 	return true
 }
 
-func LoadPlaylist(playlist *m3uparser.M3UPlaylist, checkOnline bool) error {
+func checkChannelOnline(channel Channel, timeout int) bool {
+	client := http.Client{
+		Timeout: time.Duration(timeout) * time.Second,
+	}
+	resp, err := client.Get(channel.Entry.URI)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
+
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 
 	for _, entry := range playlist.Entries {
 
@@ -66,7 +97,7 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist, checkOnline bool) error {
 			Name:  entry.Title,
 		}
 
-		if !validateChannel(channel, checkOnline, defaultTimeout) {
+		if !validateChannel(channel) {
 			continue
 		}
 
@@ -77,14 +108,21 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist, checkOnline bool) error {
 			baseURL += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
 		}
 
+		log.Printf("Loaded channel: %s\n", channel.Name)
+
 		channels = append(channels, channel)
-		channelsCache = append(channelsCache, ChannelsCacheData{baseURL: baseURL, active: true})
+		channelsCache = append(channelsCache, ChannelsCacheData{
+			baseURL: baseURL,
+			active:  true,
+		})
 	}
 
 	return nil
 }
 
 func ExportPlaylist(host, path, token string) m3uparser.M3UPlaylist {
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 	playlist := m3uparser.M3UPlaylist{
 		Entries: make([]m3uparser.M3UEntry, 0),
 	}
@@ -104,34 +142,35 @@ func SetDefaultTimeout(timeout int) {
 	defaultTimeout = timeout
 }
 
-func GetChannels() []Channel {
-	return channels
+func GetDefaultTimeout() int {
+	return defaultTimeout
 }
 
 func GetChannel(index int) (Channel, error) {
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 	if index < 0 || index >= len(channels) {
 		return Channel{}, fmt.Errorf("Channel not found")
 	}
 	return channels[index], nil
 }
 
-func GetChannelCacheData(index int) (ChannelsCacheData, error) {
-	if index < 0 || index >= len(channelsCache) {
-		return ChannelsCacheData{}, fmt.Errorf("Channel cache data not found")
-	}
-	return channelsCache[index], nil
-}
-
 func GetChannelCount() int {
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 	return len(channels)
 }
 
 func ClearChannels() {
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 	channels = make([]Channel, 0)
 	channelsCache = make([]ChannelsCacheData, 0)
 }
 
 func SetChannelActive(index int, active bool) error {
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 	if index < 0 || index >= len(channelsCache) {
 		return fmt.Errorf("Channel cache data not found")
 	}
@@ -139,95 +178,89 @@ func SetChannelActive(index int, active bool) error {
 	return nil
 }
 
-func GetChannelActive(index int) (bool, error) {
+func IsChannelActive(index int) bool {
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
 	if index < 0 || index >= len(channelsCache) {
-		return false, fmt.Errorf("Channel cache data not found")
+		return false
 	}
-	return channelsCache[index].active, nil
+	return channelsCache[index].active
 }
 
-func GetChannelStreamURL(index int, path string, query string) (string, error) {
-	if index < 0 || index >= len(channels) {
-		return "", fmt.Errorf("Channel not found")
-	}
-	channel := channels[index]
-	if path == "playlist.m3u8" {
-		return channel.Entry.URI, nil
-	}
-	cacheData := channelsCache[index]
-	serviceURL := cacheData.baseURL + "/" + path
-	if query != "" {
-		serviceURL += "?" + query
-	}
-	return serviceURL, nil
-}
-
-func GetChannelStream(index int, path string, query string) (*http.Response, error) {
-	serviceURL, err := GetChannelStreamURL(index, path, query)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("GET", serviceURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	return http.DefaultClient.Do(req)
-}
-
-func GetChannelStreamWithHeaders(index int, path string, query string, headers http.Header) (*http.Response, error) {
-	serviceURL, err := GetChannelStreamURL(index, path, query)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("GET", serviceURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	for key, values := range headers {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-	return http.DefaultClient.Do(req)
-}
-
-func GetChannelStreamWithTimeout(index int, path string, query string, timeout int) (*http.Response, error) {
-	serviceURL, err := GetChannelStreamURL(index, path, query)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("GET", serviceURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	client := http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-	}
-	return client.Do(req)
-}
-
-func GetChannelStreamWithHeadersAndTimeout(index int, path string, query string, headers http.Header, timeout int) (*http.Response, error) {
-	serviceURL, err := GetChannelStreamURL(index, path, query)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("GET", serviceURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	for key, values := range headers {
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
-	client := http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-	}
-	return client.Do(req)
-}
-
-func ValidateChannels() {
+func CheckChannels() {
+	channelsActive := make([]bool, len(channels))
 	for i := 0; i < len(channels); i++ {
-		channelsCache[i].active = validateChannel(channels[i], true, defaultTimeout)
+		channelsActive[i] = checkChannelOnline(channels[i], defaultTimeout)
+		if !channelsActive[i] {
+			log.Printf("Channel %d is offline\n", i)
+		}
 	}
+	channelsStoreMux.Lock()
+	defer channelsStoreMux.Unlock()
+	for i := 0; i < len(channels); i++ {
+		channelsCache[i].active = channelsActive[i]
+	}
+}
+
+func ChannelHandleStream(w http.ResponseWriter, r *http.Request) error {
+	vars := mux.Vars(r)
+
+	channelID, err := strconv.Atoi(vars["channelId"])
+	if err != nil {
+		return errors.New("invalid channel ID")
+	}
+
+	if !IsChannelActive(channelID) {
+		log.Printf("Channel %d not available\n", channelID)
+		return errors.New("Channel not available")
+	}
+
+	path := vars["path"]
+	query := r.URL.RawQuery
+	serviceURL := ""
+
+	channelsStoreMux.Lock()
+	channel := channels[channelID]
+	cacheData := channelsCache[channelID]
+	channelsStoreMux.Unlock()
+
+	// If the path is the playlist, return the original playlist URL
+	if path == "playlist.m3u8" {
+
+		serviceURL = channel.Entry.URI
+
+	} else {
+
+		serviceURL = cacheData.baseURL + "/" + path
+		if query != "" {
+			serviceURL += "?" + query
+		}
+	}
+
+	req, _ := http.NewRequest(r.Method, serviceURL, r.Body)
+
+	for key := range r.Header {
+		if key == "Host" {
+			continue
+		} else {
+			req.Header.Add(key, r.Header.Get(key))
+		}
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+
+	if err != nil {
+		return errors.New("failed to fetch channel")
+	}
+
+	defer resp.Body.Close()
+
+	for key := range resp.Header {
+		w.Header().Add(key, resp.Header.Get(key))
+	}
+
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+
+	return nil
 }

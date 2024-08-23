@@ -22,8 +22,15 @@ THE SOFTWARE.
 package server
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"m3u-proxy/pkg/userstore"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -35,6 +42,8 @@ var (
 	noServiceImage     = "no_service_pt.png"
 	logFile            = ""
 	noServiceAvailable = false
+	port               = 8080
+	scanTime           = 600
 )
 
 var startCmd = &cobra.Command{
@@ -47,19 +56,39 @@ var startCmd = &cobra.Command{
 		log.Printf("Starting M3U Proxy Server\n")
 		log.Printf("M3U file: %s\n", m3uFilePath)
 		log.Printf("EPG file: %s\n", epgFilePath)
+		log.Printf("Users file: %s\n", usersFilePath)
 
-		err := loadChannels(m3uFilePath, false)
-		if err != nil {
-			log.Fatalf("Failed to load M3U file: %v\n", err)
-			return
+		userstore.SetUsersFilePath(usersFilePath)
+		go reloadChannels(scanTime)
+
+		server := &http.Server{
+			Addr:    fmt.Sprintf(":%d", port),
+			Handler: setupHandlers(),
 		}
 
-		setupHandlers()
-		log.Println("Server running on :8080")
-		err = http.ListenAndServe(":8080", nil)
-		if err != nil {
-			log.Fatalf("Failed to start server: %v\n", err)
+		// Channel to listen for termination signal (SIGINT, SIGTERM)
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+		go func() {
+			fmt.Printf("Starting server on :%d", port)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fmt.Println("Server failed:", err)
+			}
+		}()
+
+		<-quit // Wait for SIGINT or SIGTERM
+
+		fmt.Println("Shutting down server...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := server.Shutdown(ctx); err != nil {
+			fmt.Println("Server forced to shutdown:", err)
 		}
+
+		fmt.Println("Server exiting")
 	},
 }
 
@@ -69,5 +98,7 @@ func init() {
 	startCmd.Flags().StringVarP(&epgFilePath, "epg", "e", "epg.xml", "Path to the EPG file (local or remote)")
 	startCmd.Flags().StringVarP(&usersFilePath, "users", "u", "users.json", "Path to the users JSON file")
 	startCmd.Flags().StringVarP(&logFile, "logfile", "l", "", "Path to the log file (optional)")
+	startCmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on")
+	startCmd.Flags().IntVarP(&scanTime, "scan-time", "s", 600, "Time in seconds to scan for new channels")
 	startCmd.Flags().StringVarP(&noServiceImage, "no-service-image", "i", "no_service_pt.png", "Path to the no service image")
 }
