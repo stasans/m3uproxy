@@ -1,0 +1,105 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*" # Trigger on tags that start with 'v'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.20.7
+
+      - name: Get version
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build for Linux
+        run: |
+          go build -o m3uproxy main.go
+          zip m3uproxy-linux-x64.zip m3uproxy
+        env:
+          GOOS: linux
+          GOARCH: amd64
+
+      - name: Build for Windows
+        run: |
+          go build -o m3uproxy.exe main.go
+          zip m3uproxy-windows.zip m3uproxy
+        env:
+          GOOS: windows
+          GOARCH: amd64
+
+      - name: Build for macOS (Intel)
+        run: |
+          go build -o m3uproxy main.go
+          zip m3uproxy-darwin-x64.zip m3uproxy
+        env:
+          GOOS: darwin
+          GOARCH: amd64
+
+      - name: Build for macOS (Apple Silicon)
+        run: |
+          go build -o m3uproxy main.go
+          zip m3uproxy-darwin-arm64.zip m3uproxy
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+      - name: Upload for Linux
+        id: upload_assets_linux_x64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: m3uproxy-linux-x64.zip
+          asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-linux-x64.zip
+          asset_content_type: application/octet-stream
+      - name: Upload for Windows
+        id: upload_assets_windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: m3uproxy-windows.zip
+          asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-windows.zip
+          asset_content_type: application/octet-stream
+      - name: Upload for macOS (Intel)
+        id: upload_assets_darwin_intel
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: m3uproxy-darwin-x64.zip
+          asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-darwin-x64.zip
+          asset_content_type: application/octet-stream
+      - name: Upload for macOS (Apple Silicon)
+        id: upload_assets_darwin_arm64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: m3uproxy-darwin-arm64.zip
+          asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-darwin-arm64.zip
+          asset_content_type: application/octet-stream

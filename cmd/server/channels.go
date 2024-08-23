@@ -23,9 +23,10 @@ package server
 
 import (
 	"log"
-	"m3u-proxy/pkg/channelstore"
-	"m3u-proxy/pkg/m3uparser"
 	"time"
+
+	"github.com/a13labs/m3uproxy/pkg/channelstore"
+	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 )
 
 func loadChannels(filePath string) error {

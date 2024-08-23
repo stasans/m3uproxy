@@ -22,9 +22,10 @@ THE SOFTWARE.
 package main
 
 import (
-	"m3u-proxy/cmd"
-	_ "m3u-proxy/cmd/server"
-	_ "m3u-proxy/cmd/users"
+	"github.com/a13labs/m3uproxy/cmd"
+
+	_ "github.com/a13labs/m3uproxy/cmd/server"
+	_ "github.com/a13labs/m3uproxy/cmd/users"
 )
 
 func main() {

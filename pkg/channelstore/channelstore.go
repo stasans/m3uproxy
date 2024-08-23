@@ -26,13 +26,14 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"m3u-proxy/pkg/m3uparser"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 
 	"github.com/gorilla/mux"
 )

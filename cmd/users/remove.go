@@ -23,8 +23,9 @@ package users
 
 import (
 	"fmt"
-	"m3u-proxy/pkg/userstore"
 	"os"
+
+	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/spf13/cobra"
 )

@@ -1,6 +1,6 @@
-module m3u-proxy
+module github.com/a13labs/m3uproxy
 
-go 1.18
+go 1.20
 
 require (
 	github.com/gorilla/mux v1.8.1

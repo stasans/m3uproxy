@@ -24,8 +24,8 @@ package channelstore_test
 import (
 	"testing"
 
-	"m3u-proxy/pkg/channelstore"
-	"m3u-proxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/channelstore"
+	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 )
 
 func TestLoadPlaylist(t *testing.T) {

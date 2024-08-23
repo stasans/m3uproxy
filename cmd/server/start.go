@@ -25,12 +25,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"m3u-proxy/pkg/userstore"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/spf13/cobra"
 )

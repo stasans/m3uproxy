@@ -22,7 +22,7 @@ THE SOFTWARE.
 package users
 
 import (
-	"m3u-proxy/cmd"
+	"github.com/a13labs/m3uproxy/cmd"
 
 	"github.com/spf13/cobra"
 )

@@ -2,11 +2,12 @@ package server
 
 import (
 	"log"
-	"m3u-proxy/pkg/channelstore"
-	"m3u-proxy/pkg/ffmpeg"
-	"m3u-proxy/pkg/userstore"
 	"net/http"
 	"os"
+
+	"github.com/a13labs/m3uproxy/pkg/channelstore"
+	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
+	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/gorilla/mux"
 )
