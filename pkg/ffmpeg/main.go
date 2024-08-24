@@ -23,13 +23,9 @@ package ffmpeg
 
 import (
 	"errors"
-	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/gorilla/mux"
 )
 
 var workingDir string
@@ -54,44 +50,22 @@ func Initialize() error {
 }
 
 // generateHLS creates HLS segments and playlist from an image using FFmpeg
-func GenerateHLS(imagePath, streamName string) {
-	// Prepare the FFmpeg command
-	go func() {
-		cmd := exec.Command("ffmpeg", "-loop", "1", "-i", imagePath,
-			"-c:v", "libx264", "-pix_fmt", "yuv420p",
-			"-vf", "scale=1280:720,fps=30", "-hls_time", "1", "-hls_list_size", "40",
-			"-hls_flags", "delete_segments", "-start_number", "1", filepath.Join(workingDir, streamName+".m3u8"))
+func GenerateImageHLS(imagePath, streamName string) *HLSStream {
 
-		log.Printf("running command: %v", cmd)
-		// Run the FFmpeg command
-		cmd.Run()
-	}()
+	localPath := filepath.Join(workingDir, streamName)
+	os.Mkdir(localPath, 0755)
+	stream := &HLSStream{
+		Name:      streamName,
+		localPath: localPath,
+		ffmpegCmd: exec.Command("ffmpeg", "-loop", "1", "-i", imagePath,
+			"-c:v", "libx264", "-pix_fmt", "yuv420p",
+			"-vf", "scale=1280:720,fps=30", "-f", "hls", "-hls_time", "1", "-hls_list_size", "40",
+			"-hls_flags", "delete_segments", "-start_number", "1", localPath+"/index.m3u8"),
+	}
+	return stream
 }
 
 func Cleanup() {
 	// Remove the temporary directory
 	os.RemoveAll(workingDir)
-}
-
-// serveHLS handles the HTTP requests to serve the HLS segments
-func ServeHLS(w http.ResponseWriter, r *http.Request) {
-	// Get the requested file path
-	vars := mux.Vars(r)
-	path := vars["path"]
-
-	// Set the appropriate content type for .m3u8 and .ts files
-	if filepath.Ext(path) == ".m3u8" {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	} else if filepath.Ext(path) == ".ts" {
-		w.Header().Set("Content-Type", "video/mp2t")
-	}
-
-	localPath := filepath.Join(workingDir, filepath.Base(path))
-	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Serve the requested file
-	http.ServeFile(w, r, localPath)
 }

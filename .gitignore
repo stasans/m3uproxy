@@ -47,3 +47,5 @@ go.work
 users.json
 streams.m3u
 epg.xml
+output.m3u
+.vscode

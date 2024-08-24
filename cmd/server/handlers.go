@@ -3,70 +3,36 @@ package server
 import (
 	"log"
 	"net/http"
-	"os"
+	"strings"
 
-	"github.com/a13labs/m3uproxy/pkg/channelstore"
-	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
+	"github.com/a13labs/m3uproxy/pkg/streamstore"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/gorilla/mux"
 )
 
+const m3uInternalPath = "m3uproxy/streams"
+const m3uProxyPath = "m3uproxy/proxy"
+
 func setupHandlers() *mux.Router {
 	r := mux.NewRouter()
-	r.HandleFunc("/channels.m3u", channelsHandler).Methods("GET")
-	r.HandleFunc("/epg.xml", epgHandler).Methods("GET")
+
+	// Health check endpoint
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}).Methods("GET")
 
-	if ffmpeg.Initialize() == nil {
-		log.Printf("FFmpeg initialized successfully. Registering /m3uproxy_internal for streams.\n")
-		r.HandleFunc("/m3uproxy_internal/{path:.*}", ffmpeg.ServeHLS).Methods("GET")
-		if _, err := os.Stat(noServiceImage); os.IsNotExist(err) {
-			log.Fatalf("No service image not found at %s\n", noServiceImage)
-		} else {
-			log.Printf("Generating HLS for no service image\n")
-			ffmpeg.GenerateHLS(noServiceImage, "no_service")
-			noServiceAvailable = true
-		}
-	}
-	r.HandleFunc("/m3uproxy/{token}/{channelId}/{path:.*}", proxyHandler).Methods("GET")
-	r.MatcherFunc(func(r *http.Request, rm *mux.RouteMatch) bool {
-		return r.URL.Path == "/"
-	}).HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/channels.m3u", http.StatusMovedPermanently)
-	})
-	http.Handle("/", r)
+	// Streams and EPG endpoints
+	r.HandleFunc("/streams.m3u", streamsHandler).Methods("GET")
+	r.HandleFunc("/epg.xml", epgHandler).Methods("GET")
+
+	// HLS streams (internal and external)
+	r.HandleFunc("/"+m3uInternalPath+"/{path:.*}", internalStreamHandler).Methods("GET")
+	r.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", proxyHandler).Methods("GET")
 	return r
 }
 
-func handleStreamError(w http.ResponseWriter, r *http.Request, msg string) {
-	if noServiceAvailable {
-		http.Redirect(w, r, "/m3uproxy_internal/no_service.m3u8", http.StatusMovedPermanently)
-	} else {
-		http.Error(w, msg, http.StatusNotFound)
-	}
-}
-
-func proxyHandler(w http.ResponseWriter, r *http.Request) {
-
-	vars := mux.Vars(r)
-	token := vars["token"]
-
-	ok := userstore.ValidateSingleToken(token)
-	if !ok {
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to channel stream %s: missing token\n", r.URL.Path)
-		return
-	}
-
-	if channelstore.ChannelHandleStream(w, r) != nil {
-		handleStreamError(w, r, "Channel not found")
-	}
-}
-
-func channelsHandler(w http.ResponseWriter, r *http.Request) {
+func streamsHandler(w http.ResponseWriter, r *http.Request) {
 
 	username, password, ok := verifyAuth(r)
 	if !ok {
@@ -90,7 +56,7 @@ func channelsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.WriteHeader(http.StatusOK)
-	playlist := channelstore.ExportPlaylist(r.Host, "m3uproxy", token)
+	playlist := streamstore.ExportPlaylist(r.Host, m3uProxyPath, token)
 	w.Write([]byte(playlist.String()))
 	log.Printf("Generated M3U playlist for user %s\n", username)
 }
@@ -107,4 +73,33 @@ func epgHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(content))
 	log.Printf("EPG data served successfully\n")
+}
+
+func proxyHandler(w http.ResponseWriter, r *http.Request) {
+
+	vars := mux.Vars(r)
+	token := vars["token"]
+
+	ok := userstore.ValidateSingleToken(token)
+	if !ok {
+		http.Error(w, "Invalid token", http.StatusUnauthorized)
+		log.Printf("Unauthorized access to stream stream %s: missing token\n", r.URL.Path)
+		return
+	}
+
+	if err := streamstore.StreamStreamHandler(w, r); err != nil {
+		log.Printf("Error serving stream stream: %v\n", err)
+		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
+	}
+}
+
+func internalStreamHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	path := vars["path"]
+	if strings.HasPrefix(path, "no_service") {
+		noServiceHandler(w, r)
+		return
+	}
+
+	http.NotFound(w, r)
 }

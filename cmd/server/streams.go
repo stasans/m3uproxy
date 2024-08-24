@@ -25,35 +25,38 @@ import (
 	"log"
 	"time"
 
-	"github.com/a13labs/m3uproxy/pkg/channelstore"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/streamstore"
 )
 
-func loadChannels(filePath string) error {
+func loadStreams(filePath string) error {
 
 	playlist, err := m3uparser.ParseM3UFile(filePath)
 	if err != nil {
 		return err
 	}
 
-	if err := channelstore.LoadPlaylist(playlist); err != nil {
+	if err := streamstore.LoadPlaylist(playlist); err != nil {
 		return err
 	}
 
-	log.Printf("Loaded %d channels\n", channelstore.GetChannelCount())
+	log.Printf("Loaded %d streams\n", streamstore.GetStreamCount())
 	return nil
 }
 
-func reloadChannels(scanTime int) {
-	for {
-		log.Println("Reloading channels")
-		err := loadChannels(m3uFilePath)
-		if err != nil {
-			log.Printf("Failed to reload channels: %v\n", err)
+func setupStreams(scanTime int) {
+
+	go func() {
+		for {
+			log.Println("Streams loading started")
+			err := loadStreams(m3uFilePath)
+			if err != nil {
+				log.Printf("Failed to load streams: %v\n", err)
+			}
+			log.Println("Checking streams availability, this may take a while")
+			streamstore.CheckStreams()
+			log.Println("Streams loading completed")
+			<-time.After(time.Duration(scanTime) * time.Second)
 		}
-		log.Println("Checking channels availability, this may take a while")
-		channelstore.CheckChannels()
-		log.Println("Channels reloaded")
-		<-time.After(time.Duration(scanTime) * time.Second)
-	}
+	}()
 }

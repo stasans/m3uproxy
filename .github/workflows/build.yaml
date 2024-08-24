@@ -53,6 +53,7 @@ jobs:
         env:
           GOOS: darwin
           GOARCH: arm64
+
       - name: Create release
         id: create_release
         uses: actions/create-release@v1
@@ -63,6 +64,7 @@ jobs:
           release_name: Release ${{ steps.get_version.outputs.version }}
           draft: false
           prerelease: false
+
       - name: Upload for Linux
         id: upload_assets_linux_x64
         uses: actions/upload-release-asset@v1
@@ -73,6 +75,7 @@ jobs:
           asset_path: m3uproxy-linux-x64.zip
           asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-linux-x64.zip
           asset_content_type: application/octet-stream
+
       - name: Upload for Windows
         id: upload_assets_windows
         uses: actions/upload-release-asset@v1
@@ -83,6 +86,7 @@ jobs:
           asset_path: m3uproxy-windows.zip
           asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-windows.zip
           asset_content_type: application/octet-stream
+
       - name: Upload for macOS (Intel)
         id: upload_assets_darwin_intel
         uses: actions/upload-release-asset@v1
@@ -93,6 +97,7 @@ jobs:
           asset_path: m3uproxy-darwin-x64.zip
           asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-darwin-x64.zip
           asset_content_type: application/octet-stream
+
       - name: Upload for macOS (Apple Silicon)
         id: upload_assets_darwin_arm64
         uses: actions/upload-release-asset@v1
@@ -103,3 +108,34 @@ jobs:
           asset_path: m3uproxy-darwin-arm64.zip
           asset_name: m3uproxy-${{ steps.get_version.outputs.version }}-darwin-arm64.zip
           asset_content_type: application/octet-stream
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            a13labs/m3uproxy
+          tags: |
+            type=schedule
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=sha
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

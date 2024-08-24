@@ -19,13 +19,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package channelstore_test
+package streamstore_test
 
 import (
 	"testing"
 
-	"github.com/a13labs/m3uproxy/pkg/channelstore"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/streamstore"
 )
 
 func TestLoadPlaylist(t *testing.T) {
@@ -39,24 +39,24 @@ func TestLoadPlaylist(t *testing.T) {
 	}
 
 	// Load the playlist into the channel store
-	err := channelstore.LoadPlaylist(playlist)
+	err := streamstore.LoadPlaylist(playlist)
 	if err != nil {
 		t.Errorf("Failed to load playlist: %v", err)
 	}
 
 	// Verify that the number of channels is correct
 	expectedChannelCount := 3
-	if channelstore.GetChannelCount() != expectedChannelCount {
-		t.Errorf("Expected %d channels, but got %d", expectedChannelCount, channelstore.GetChannelCount())
+	if streamstore.GetStreamCount() != expectedChannelCount {
+		t.Errorf("Expected %d channels, but got %d", expectedChannelCount, streamstore.GetStreamCount())
 	}
 }
 
 func TestSetDefaultTimeout(t *testing.T) {
 	// Set a default timeout of 5 seconds
-	channelstore.SetDefaultTimeout(5)
+	streamstore.SetDefaultTimeout(5)
 
 	// Get the default timeout from the channel store
-	defaultTimeout := channelstore.GetDefaultTimeout()
+	defaultTimeout := streamstore.GetDefaultTimeout()
 
 	// Verify that the default timeout is correct
 	expectedTimeout := 5

@@ -31,20 +31,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	m3uFilePath        = "streams.m3u"
-	epgFilePath        = "epg.xml"
-	usersFilePath      = "users.json"
-	noServiceImage     = "no_service_pt.png"
-	logFile            = ""
-	noServiceAvailable = false
-	port               = 8080
-	scanTime           = 600
+	m3uFilePath    = "streams.m3u"
+	epgFilePath    = "epg.xml"
+	usersFilePath  = "users.json"
+	noServiceImage = "no_service_pt.png"
+	logFile        = ""
+	port           = 8080
+	scanTime       = 600
 )
 
 var startCmd = &cobra.Command{
@@ -60,12 +60,20 @@ var startCmd = &cobra.Command{
 		log.Printf("Users file: %s\n", usersFilePath)
 
 		userstore.SetUsersFilePath(usersFilePath)
-		go reloadChannels(scanTime)
+		setupStreams(scanTime)
 
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", port),
 			Handler: setupHandlers(),
 		}
+
+		// Initialize FFmpeg
+		if err := ffmpeg.Initialize(); err != nil {
+			log.Fatalf("Failed to initialize FFmpeg: %v\n", err)
+		}
+
+		// Start the no service stream
+		startNoServiceStream()
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)
 		quit := make(chan os.Signal, 1)
@@ -81,6 +89,9 @@ var startCmd = &cobra.Command{
 		<-quit // Wait for SIGINT or SIGTERM
 
 		fmt.Println("Shutting down server...")
+
+		// Stop the no service stream
+		stopNoServiceStream()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -100,6 +111,6 @@ func init() {
 	startCmd.Flags().StringVarP(&usersFilePath, "users", "u", "users.json", "Path to the users JSON file")
 	startCmd.Flags().StringVarP(&logFile, "logfile", "l", "", "Path to the log file (optional)")
 	startCmd.Flags().IntVarP(&port, "port", "p", 8080, "Port to listen on")
-	startCmd.Flags().IntVarP(&scanTime, "scan-time", "s", 600, "Time in seconds to scan for new channels")
+	startCmd.Flags().IntVarP(&scanTime, "scan-time", "s", 600, "Time in seconds to scan for new streams")
 	startCmd.Flags().StringVarP(&noServiceImage, "no-service-image", "i", "no_service_pt.png", "Path to the no service image")
 }
