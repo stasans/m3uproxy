@@ -1,7 +1,3 @@
-Here's a `README.md` template for your `m3uproxy` project:
-
----
-
 # m3uproxy
 
 **m3uproxy** is a Go-based HTTP server designed to proxy HLS (HTTP Live Streaming) streams. It provides a convenient way to manage and distribute streaming streams with user management and access control features.
