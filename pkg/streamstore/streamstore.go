@@ -22,6 +22,7 @@ THE SOFTWARE.
 package streamstore
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -34,14 +35,18 @@ import (
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/grafov/m3u8"
 
 	"github.com/gorilla/mux"
 )
 
 type Stream struct {
+	index    int
 	m3uEntry m3uparser.M3UEntry
-	baseURL  string
+	basePath string
 	active   bool
+	playlist *m3u8.MasterPlaylist
+	mux      *sync.Mutex
 }
 
 var (
@@ -50,16 +55,54 @@ var (
 	streamsStoreMux sync.Mutex
 )
 
-func checkStreamOnline(stream Stream, timeout int) bool {
+func checkStreamOnline(stream *Stream, timeout int) {
+	stream.mux.Lock()
+	defer stream.mux.Unlock()
+	stream.active = false
+	stream.playlist = nil
 	client := http.Client{
 		Timeout: time.Duration(timeout) * time.Second,
 	}
 	resp, err := client.Get(stream.m3uEntry.URI)
 	if err != nil {
-		return false
+		return
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+
+	status := resp.StatusCode / 100
+	if status != 2 {
+		return
+	}
+
+	realURL := resp.Request.URL.String()
+	if realURL != stream.m3uEntry.URI {
+		parsedURL, err := url.Parse(realURL)
+		log.Printf("Redirected to: %s\n", realURL)
+
+		if err != nil {
+			log.Printf("Failed to parse URL: %s\n", realURL)
+			return
+		}
+
+		basePath := ""
+
+		if strings.LastIndex(parsedURL.Path, "/") != -1 {
+			basePath += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
+		}
+
+		stream.m3uEntry.URI = realURL
+		stream.basePath = basePath
+	}
+
+	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+	if err != nil {
+		return
+	}
+
+	stream.active = true
+	if listType == m3u8.MASTER {
+		stream.playlist = p.(*m3u8.MasterPlaylist)
+	}
 }
 
 func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
@@ -67,7 +110,7 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
 
-	for _, entry := range playlist.Entries {
+	for i, entry := range playlist.Entries {
 
 		if entry.URI == "" {
 			continue
@@ -78,16 +121,20 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
 			log.Printf("Failed to parse URL: %s\n", entry.URI)
 			continue
 		}
-		baseURL := parsedURL.Scheme + "://" + parsedURL.Host
+
+		basePath := ""
 
 		if strings.LastIndex(parsedURL.Path, "/") != -1 {
-			baseURL += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
+			basePath += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
 		}
 
 		stream := Stream{
+			index:    i,
 			m3uEntry: entry,
-			baseURL:  baseURL,
-			active:   true,
+			basePath: basePath,
+			active:   false,
+			playlist: nil,
+			mux:      &sync.Mutex{},
 		}
 		streams = append(streams, stream)
 
@@ -141,7 +188,9 @@ func SetStreamActive(index int, active bool) error {
 	if index < 0 || index >= len(streams) {
 		return fmt.Errorf("Stream cache data not found")
 	}
+	streams[index].mux.Lock()
 	streams[index].active = active
+	streams[index].mux.Unlock()
 	return nil
 }
 
@@ -155,21 +204,17 @@ func IsStreamActive(index int) bool {
 }
 
 func CheckStreams() {
-	streamsActive := make([]bool, len(streams))
+
 	for i := 0; i < len(streams); i++ {
-		streamsActive[i] = checkStreamOnline(streams[i], defaultTimeout)
-		if !streamsActive[i] {
+		checkStreamOnline(&streams[i], defaultTimeout)
+		if !streams[i].active {
 			log.Printf("Stream %d is offline\n", i)
 		}
-	}
-	streamsStoreMux.Lock()
-	defer streamsStoreMux.Unlock()
-	for i := 0; i < len(streams); i++ {
-		streams[i].active = streamsActive[i]
 	}
 }
 
 func StreamStreamHandler(w http.ResponseWriter, r *http.Request) error {
+
 	vars := mux.Vars(r)
 
 	streamID, err := strconv.Atoi(vars["streamId"])
@@ -183,27 +228,30 @@ func StreamStreamHandler(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	path := vars["path"]
-	query := r.URL.RawQuery
-	serviceURL := ""
 
-	streamsStoreMux.Lock()
 	stream := streams[streamID]
-	streamsStoreMux.Unlock()
+	stream.mux.Lock()
+	defer stream.mux.Unlock()
 
-	// If the path is the playlist, return the original playlist URL
-	if path == "playlist.m3u8" {
+	if path == "playlist.m3u8" && stream.playlist != nil {
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(stream.playlist.String()))
+		return nil
+	}
 
-		serviceURL = stream.m3uEntry.URI
+	serviceURL, _ := url.Parse(stream.m3uEntry.URI)
 
-	} else {
-
-		serviceURL = stream.baseURL + "/" + path
-		if query != "" {
-			serviceURL += "?" + query
+	if path != "playlist.m3u8" {
+		if strings.HasPrefix(serviceURL.Path, stream.basePath) {
+			serviceURL.Path = stream.basePath + "/" + path
+			serviceURL.RawQuery = r.URL.RawQuery
+		} else {
+			serviceURL.Path = path
 		}
 	}
 
-	req, _ := http.NewRequest(r.Method, serviceURL, r.Body)
+	req, _ := http.NewRequest(r.Method, serviceURL.String(), r.Body)
 
 	for key := range r.Header {
 		if key == "Host" {
@@ -220,7 +268,7 @@ func StreamStreamHandler(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	code := resp.StatusCode / 100
-	if code == 2 || code == 3 {
+	if code == 2 {
 
 		if resp.StatusCode == http.StatusNoContent {
 			return errors.New("no content")
