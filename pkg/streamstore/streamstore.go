@@ -47,6 +47,7 @@ type Stream struct {
 	active   bool
 	playlist *m3u8.MasterPlaylist
 	mux      *sync.Mutex
+	headers  map[string]string
 }
 
 var (
@@ -63,7 +64,18 @@ func checkStreamOnline(stream *Stream, timeout int) {
 	client := http.Client{
 		Timeout: time.Duration(timeout) * time.Second,
 	}
-	resp, err := client.Get(stream.m3uEntry.URI)
+
+	req, err := http.NewRequest("GET", stream.m3uEntry.URI, nil)
+	if err != nil {
+		return
+	}
+
+	for key := range stream.headers {
+		req.Header.Add(key, stream.headers[key])
+	}
+
+	resp, err := client.Do(req)
+
 	if err != nil {
 		return
 	}
@@ -128,12 +140,22 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
 			basePath += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
 		}
 
+		internalTags := entry.GetTag("M3UPROXYHEADER")
+		headers := make(map[string]string)
+		for _, tag := range internalTags {
+			parts := strings.Split(tag.Value, "=")
+			if len(parts) == 2 {
+				headers[parts[0]] = parts[1]
+			}
+		}
+
 		stream := Stream{
 			index:    i,
 			m3uEntry: entry,
 			basePath: basePath,
 			active:   false,
 			playlist: nil,
+			headers:  headers,
 			mux:      &sync.Mutex{},
 		}
 		streams = append(streams, stream)
@@ -252,6 +274,10 @@ func StreamStreamHandler(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	req, _ := http.NewRequest(r.Method, serviceURL.String(), r.Body)
+
+	for key := range stream.headers {
+		r.Header.Add(key, stream.headers[key])
+	}
 
 	for key := range r.Header {
 		if key == "Host" {

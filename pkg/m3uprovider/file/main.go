@@ -19,16 +19,47 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package main
+package file
 
 import (
-	"github.com/a13labs/m3uproxy/cmd"
+	"encoding/json"
+	"log"
 
-	_ "github.com/a13labs/m3uproxy/cmd/playlist"
-	_ "github.com/a13labs/m3uproxy/cmd/server"
-	_ "github.com/a13labs/m3uproxy/cmd/users"
+	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
 )
 
-func main() {
-	cmd.Execute()
+type M3UFileConfig struct {
+	Source string `json:"source"`
+}
+
+type M3UFileProvider struct {
+	types.M3UProvider
+	playlist m3uparser.M3UPlaylist
+}
+
+func NewM3UFileProvider(config string) *M3UFileProvider {
+
+	cfg := M3UFileConfig{}
+	err := json.Unmarshal([]byte(config), &cfg)
+	if err != nil {
+		log.Println("Error parsing config")
+		return nil
+	}
+
+	log.Printf("Parsing M3U file: %s", cfg.Source)
+	playlist, err := m3uparser.ParseM3UFile(cfg.Source)
+	if err != nil {
+		log.Printf("Error parsing M3U file: %s", err)
+		return nil
+	}
+	log.Printf("M3U file parsed: %d entries", len(playlist.Entries))
+
+	return &M3UFileProvider{
+		playlist: *playlist,
+	}
+}
+
+func (p *M3UFileProvider) GetPlaylist() *m3uparser.M3UPlaylist {
+	return &p.playlist
 }

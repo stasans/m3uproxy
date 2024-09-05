@@ -22,19 +22,46 @@ THE SOFTWARE.
 package server
 
 import (
+	"errors"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 	"github.com/a13labs/m3uproxy/pkg/streamstore"
 )
 
-func loadStreams(filePath string) error {
+func loadStreams(path string) error {
 
-	playlist, err := m3uparser.ParseM3UFile(filePath)
-	if err != nil {
-		return err
+	// If extension is .m3u, load as a m3u file
+	// Otherwise, load as a json file
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		log.Printf("File %s not found\n", path)
+		return nil
 	}
+
+	extension := filepath.Ext(path)
+	var playlist *m3uparser.M3UPlaylist
+	var err error
+	if extension == ".m3u" {
+		log.Printf("Loading M3U file %s\n", path)
+		playlist, err = m3uparser.ParseM3UFile(path)
+		if err != nil {
+			return err
+		}
+	} else if extension == ".json" {
+		log.Printf("Loading JSON file %s\n", path)
+		playlist, err = m3uprovider.LoadPlaylist(path)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("invalid file extension")
+	}
+
+	log.Printf("Loaded %d streams from %s\n", playlist.GetStreamCount(), path)
 
 	if err := streamstore.LoadPlaylist(playlist); err != nil {
 		return err

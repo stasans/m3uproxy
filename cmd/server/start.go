@@ -44,7 +44,7 @@ var (
 	noServiceImage = "no_service_pt.png"
 	logFile        = ""
 	port           = 8080
-	scanTime       = 600
+	scanTime       = 1800
 )
 
 var startCmd = &cobra.Command{

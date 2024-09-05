@@ -19,16 +19,31 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package main
+
+package m3uparser
 
 import (
-	"github.com/a13labs/m3uproxy/cmd"
-
-	_ "github.com/a13labs/m3uproxy/cmd/playlist"
-	_ "github.com/a13labs/m3uproxy/cmd/server"
-	_ "github.com/a13labs/m3uproxy/cmd/users"
+	"testing"
 )
 
-func main() {
-	cmd.Execute()
+func TestParseTag(t *testing.T) {
+	line := "#EXTINF:123,Sample Title"
+	expectedTagName := "EXTINF"
+	expectedTagValue := "123,Sample Title"
+	tag, err := parseTag(line)
+	if err != nil {
+		t.Errorf("Error parsing tag: %v", err)
+	}
+
+	if tag.Tag != expectedTagName || tag.Value != expectedTagValue {
+		t.Errorf("Unexpected tag. Expected: %s=%s, Got: %s=%s", expectedTagName, expectedTagValue, tag.Tag, tag.Value)
+	}
+}
+
+func TestParseTag_EmptyLine(t *testing.T) {
+	line := ""
+	_, err := parseTag(line)
+	if err == nil {
+		t.Error("Error should not be nil")
+	}
 }
