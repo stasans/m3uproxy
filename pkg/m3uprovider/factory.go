@@ -123,10 +123,13 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 	if len(config.Overrides) > 0 {
 		log.Println("Applying overrides")
 		for _, override := range config.Overrides {
-			entry := masterPlaylist.GetEntryByTvgTag("tvg-id", override.Channel)
-			if entry == nil {
+			index := masterPlaylist.GetEntryIndexByTvgTag("tvg-id", override.Channel)
+			if index == -1 {
+				log.Printf("Channel '%s' not found, skipping override.", override.Channel)
 				continue
 			}
+
+			entry := masterPlaylist.Entries[index]
 			log.Printf("Applying override for channel '%s'.", entry.Title)
 			if override.Disabled {
 				masterPlaylist.RemoveEntryByTvgTag("tvg-id", override.Channel)
@@ -143,8 +146,7 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 					})
 				}
 			}
-			masterPlaylist.RemoveEntryByTvgTag("tvg-id", override.Channel)
-			masterPlaylist.Entries = append(masterPlaylist.Entries, *entry)
+			masterPlaylist.Entries[index] = entry
 		}
 	}
 

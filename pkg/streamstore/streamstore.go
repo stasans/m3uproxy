@@ -74,6 +74,21 @@ func checkStreamOnline(stream *Stream, timeout int) {
 		req.Header.Add(key, stream.headers[key])
 	}
 
+	vlcTags := stream.m3uEntry.GetTag("EXTVLCOPT")
+	for _, tag := range vlcTags {
+		header_k_v := strings.Split(tag.Value, "=")
+		if len(header_k_v) == 2 {
+			if header_k_v[0] == "http-user-agent" {
+				req.Header.Add("User-Agent", header_k_v[1])
+				continue
+			}
+			if header_k_v[0] == "http-referrer" {
+				req.Header.Add("Referer", header_k_v[1])
+				continue
+			}
+		}
+	}
+
 	resp, err := client.Do(req)
 
 	if err != nil {

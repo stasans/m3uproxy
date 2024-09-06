@@ -113,6 +113,15 @@ func (entries M3UEntries) GetByTvgTag(tag string, value string) *M3UEntry {
 	return nil
 }
 
+func (entries M3UEntries) GetIndexByTvgTag(tag string, value string) int {
+	for i, entry := range entries {
+		if entry.TVGTags.GetValue(tag) == value {
+			return i
+		}
+	}
+	return -1
+}
+
 func (entries M3UEntries) RemoveByTvgTag(tag string, value string) {
 	for i, entry := range entries {
 		if entry.TVGTags.GetValue(tag) == value {

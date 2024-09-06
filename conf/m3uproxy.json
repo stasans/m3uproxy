@@ -2,7 +2,7 @@
     "playlist": "conf/playlist.json",
     "epg": "",
     "port": 8080,
-    "no_service_image": "assets/no_service_pt.png",
+    "no_service_image": "assets/no_service_pt.jpg",
     "auth": {
         "provider": "memory",
         "settings": {}

@@ -50,3 +50,4 @@ epg.xml
 output.m3u
 .vscode
 dev/*
+cache/*

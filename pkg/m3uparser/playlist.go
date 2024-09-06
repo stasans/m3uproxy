@@ -84,6 +84,10 @@ func (playlist *M3UPlaylist) GetEntryByTvgTag(tag, value string) *M3UEntry {
 	return playlist.Entries.GetByTvgTag(tag, value)
 }
 
+func (playlist *M3UPlaylist) GetEntryIndexByTvgTag(tag, value string) int {
+	return playlist.Entries.GetIndexByTvgTag(tag, value)
+}
+
 func (playlist *M3UPlaylist) RemoveEntryByTvgTag(tag, value string) {
 	playlist.Entries.RemoveByTvgTag(tag, value)
 }
