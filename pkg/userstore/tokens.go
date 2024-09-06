@@ -30,9 +30,9 @@ import (
 )
 
 var (
-	tokenValidityCache map[string]time.Time
-	tokenUserCache     map[string]string
-	tokenStoreMux      sync.Mutex
+	tokenValidityCache = make(map[string]time.Time)
+	tokenUserCache     = make(map[string]string)
+	tokenStoreMux      = sync.Mutex{}
 )
 
 const tokenValidity = 24 * time.Hour
