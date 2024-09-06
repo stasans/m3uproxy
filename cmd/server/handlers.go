@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/streamstore"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 
@@ -14,7 +15,9 @@ import (
 const m3uInternalPath = "m3uproxy/streams"
 const m3uProxyPath = "m3uproxy/proxy"
 
-func setupHandlers() *mux.Router {
+var epgFilePath = "epg.xml"
+
+func setupHandlers(config *rootCmd.Config) *mux.Router {
 	r := mux.NewRouter()
 
 	// Health check endpoint
@@ -29,6 +32,8 @@ func setupHandlers() *mux.Router {
 	// HLS streams (internal and external)
 	r.HandleFunc("/"+m3uInternalPath+"/{path:.*}", internalStreamHandler).Methods("GET")
 	r.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", proxyHandler).Methods("GET")
+
+	epgFilePath = config.Epg
 	return r
 }
 

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 
+	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/spf13/cobra"
@@ -43,8 +44,19 @@ var removeCmd = &cobra.Command{
 			cmd.PrintErrln("Usage: m3uproxy users remove <username>")
 			os.Exit(1)
 		}
-		userstore.SetUsersFilePath(usersFilePath)
-		err := userstore.RemoveUser(args[0])
+		config, err := rootCmd.LoadConfig()
+		if err != nil {
+			cmd.PrintErrln(err)
+			os.Exit(1)
+		}
+
+		err = userstore.InitializeAuthProvider(config.Auth.Provider, config.Auth.Settings)
+		if err != nil {
+			cmd.PrintErrln(err)
+			os.Exit(1)
+		}
+
+		err = userstore.RemoveUser(args[0])
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)

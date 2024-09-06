@@ -19,47 +19,46 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package file
+package auth
 
 import (
 	"encoding/json"
-	"log"
-
-	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
+	"fmt"
 )
 
-type M3UFileConfig struct {
-	Source string `json:"source"`
+type NullAuthProvider struct {
+	AuthProvider
 }
 
-type M3UFileProvider struct {
-	types.M3UProvider
-	playlist m3uparser.M3UPlaylist
+func NewNullAuthProvider(config json.RawMessage) AuthProvider {
+	return &NullAuthProvider{}
 }
 
-func NewM3UFileProvider(config json.RawMessage) *M3UFileProvider {
-
-	cfg := M3UFileConfig{}
-	err := json.Unmarshal([]byte(config), &cfg)
-	if err != nil {
-		log.Println("Error parsing config")
-		return nil
-	}
-
-	log.Printf("Parsing M3U file: %s", cfg.Source)
-	playlist, err := m3uparser.ParseM3UFile(cfg.Source)
-	if err != nil {
-		log.Printf("Error parsing M3U file: %s", err)
-		return nil
-	}
-	log.Printf("M3U file parsed: %d entries", len(playlist.Entries))
-
-	return &M3UFileProvider{
-		playlist: *playlist,
-	}
+func (a *NullAuthProvider) AuthenticateUser(username, password string) bool {
+	return true
 }
 
-func (p *M3UFileProvider) GetPlaylist() *m3uparser.M3UPlaylist {
-	return &p.playlist
+func (a *NullAuthProvider) AddUser(username, password string) error {
+	return nil
+}
+
+func (a *NullAuthProvider) RemoveUser(username string) error {
+	return nil
+}
+
+func (a *NullAuthProvider) GetUsers() ([]string, error) {
+	users := make([]string, 0)
+	return users, nil
+}
+
+func (a *NullAuthProvider) ChangePassword(username, password string) error {
+	return nil
+}
+
+func (a *NullAuthProvider) DropUsers() error {
+	return nil
+}
+
+func (a *NullAuthProvider) LoadUsers() error {
+	return fmt.Errorf("not implemented")
 }

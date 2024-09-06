@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 
+	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/spf13/cobra"
@@ -43,8 +44,18 @@ var passwordCmd = &cobra.Command{
 			cmd.PrintErrln("Usage: m3uproxy users add <username> <password>")
 			os.Exit(1)
 		}
-		userstore.SetUsersFilePath(usersFilePath)
-		err := userstore.ChangePassword(args[0], args[1])
+		config, err := rootCmd.LoadConfig()
+		if err != nil {
+			cmd.PrintErrln(err)
+			os.Exit(1)
+		}
+
+		err = userstore.InitializeAuthProvider(config.Auth.Provider, config.Auth.Settings)
+		if err != nil {
+			cmd.PrintErrln(err)
+			os.Exit(1)
+		}
+		err = userstore.ChangePassword(args[0], args[1])
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)

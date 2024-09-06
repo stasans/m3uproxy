@@ -19,6 +19,7 @@ RUN go build -o m3uproxy
 FROM alpine:latest
 
 COPY --from=builder /app/m3uproxy /app/m3uproxy
+COPY --from=builder /app/conf /app/conf
 COPY --from=builder /app/assets /app/assets
 COPY --from=builder /app/scripts/entrypoint.sh /app/entrypoint.sh
 

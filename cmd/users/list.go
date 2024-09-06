@@ -24,6 +24,7 @@ package users
 import (
 	"os"
 
+	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/spf13/cobra"
@@ -38,7 +39,18 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List users",
 	Run: func(cmd *cobra.Command, args []string) {
-		userstore.SetUsersFilePath(usersFilePath)
+		config, err := rootCmd.LoadConfig()
+		if err != nil {
+			cmd.PrintErrln(err)
+			os.Exit(1)
+		}
+
+		err = userstore.InitializeAuthProvider(config.Auth.Provider, config.Auth.Settings)
+		if err != nil {
+			cmd.PrintErrln(err)
+			os.Exit(1)
+		}
+
 		users, err := userstore.GetUsers()
 		if err != nil {
 			cmd.PrintErrln(err)

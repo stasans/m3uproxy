@@ -19,20 +19,16 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-M3UFILE=${M3UFILE:-"/config/playlist.m3u"}
-EPGFILE=${EPGFILE:-"/config/epg.xml"}
-USERSFILE=${USERSFILE:-"/config/users.json"}
-NOSERVICEFILE=${NOSERVICEFILE:-"/app/assets/no_service_pt.jpg"}
-SCANTIME=${SCANTIME:-"600"}
+CONFIGFILE=${CONFIGFILE:-"conf/m3uproxy.json"}
 USERNAME=${USERNAME:-"admin"}
 PASSWORD=${PASSWORD:-"admin"}
 
 # Check if users.json exists, if not add users from environment variables
 if [ ! -f $USERSFILE ]; then
-  echo "Creating users.json"
+  echo "Adding initial user."
   if [ -n "$USERNAME" ] && [ -n "$PASSWORD" ]; then
     echo "Adding user $USERNAME"
-    /app/m3uproxy users add -u $USERSFILE $USERNAME $PASSWORD
+    /app/m3uproxy users add -c $CONFIGFILE $USERNAME $PASSWORD
     if [ $? -ne 0 ]; then
         echo "Failed to add user $USERNAME"
         exit 1
@@ -41,4 +37,4 @@ if [ ! -f $USERSFILE ]; then
 fi
 
 # Start m3uproxy
-/app/m3uproxy server start -m $M3UFILE -e $EPGFILE -u $USERSFILE -i $NOSERVICEFILE -s $SCANTIME
+/app/m3uproxy server -c $CONFIGFILE

@@ -159,8 +159,6 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
 			mux:      &sync.Mutex{},
 		}
 		streams = append(streams, stream)
-
-		log.Printf("Loaded stream: %s\n", entry.Title)
 	}
 
 	return nil

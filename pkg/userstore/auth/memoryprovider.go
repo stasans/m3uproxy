@@ -1,0 +1,91 @@
+/*
+Copyright © 2024 Alexandre Pires
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+package auth
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type MemoryAuthProvide struct {
+	AuthProvider
+	users map[string]string
+}
+
+func NewMemoryAuthProvider(config json.RawMessage) AuthProvider {
+	return &MemoryAuthProvide{
+		users: make(map[string]string),
+	}
+}
+
+func (a *MemoryAuthProvide) AuthenticateUser(username, password string) bool {
+	if storedPassword, ok := a.users[username]; ok {
+		return storedPassword == HashPassword(password)
+	}
+	return false
+}
+
+func (a *MemoryAuthProvide) AddUser(username, password string) error {
+
+	if _, ok := a.users[username]; ok {
+		return fmt.Errorf("user already exists")
+	}
+
+	a.users[username] = HashPassword(password)
+	return nil
+}
+
+func (a *MemoryAuthProvide) RemoveUser(username string) error {
+
+	if _, ok := a.users[username]; !ok {
+		return fmt.Errorf("user does not exist")
+	}
+
+	delete(a.users, username)
+	return nil
+}
+
+func (a *MemoryAuthProvide) GetUsers() ([]string, error) {
+	users := make([]string, 0, len(a.users))
+	for user := range a.users {
+		users = append(users, user)
+	}
+	return users, nil
+}
+
+func (a *MemoryAuthProvide) ChangePassword(username, password string) error {
+	if _, ok := a.users[username]; !ok {
+		return fmt.Errorf("user does not exist")
+	}
+
+	a.users[username] = HashPassword(password)
+	return nil
+}
+
+func (a *MemoryAuthProvide) DropUsers() error {
+	a.users = make(map[string]string)
+	return nil
+}
+
+func (a *MemoryAuthProvide) LoadUsers() error {
+	return fmt.Errorf("not implemented")
+}

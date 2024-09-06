@@ -19,47 +19,46 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package file
+package cmd
 
 import (
 	"encoding/json"
-	"log"
-
-	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
+	"os"
 )
 
-type M3UFileConfig struct {
-	Source string `json:"source"`
+type Config struct {
+	Playlist       string `json:"playlist"`
+	Epg            string `json:"epg"`
+	Port           int    `json:"port"`
+	LogFile        string `json:"log_file,omitempty"`
+	NoServiceImage string `json:"no_service_image,omitempty"`
+	ScanTime       int    `json:"scan_time,omitempty"`
+	Auth           struct {
+		Provider string          `json:"provider"`
+		Settings json.RawMessage `json:"settings"`
+	} `json:"auth"`
 }
 
-type M3UFileProvider struct {
-	types.M3UProvider
-	playlist m3uparser.M3UPlaylist
-}
+func LoadConfig() (*Config, error) {
 
-func NewM3UFileProvider(config json.RawMessage) *M3UFileProvider {
+	_, err := os.Stat(ConfigFile)
 
-	cfg := M3UFileConfig{}
-	err := json.Unmarshal([]byte(config), &cfg)
+	if os.IsNotExist(err) {
+		return nil, err
+	}
+
+	file, err := os.Open(ConfigFile)
 	if err != nil {
-		log.Println("Error parsing config")
-		return nil
+		return nil, err
 	}
 
-	log.Printf("Parsing M3U file: %s", cfg.Source)
-	playlist, err := m3uparser.ParseM3UFile(cfg.Source)
+	defer file.Close()
+
+	var config Config
+	err = json.NewDecoder(file).Decode(&config)
 	if err != nil {
-		log.Printf("Error parsing M3U file: %s", err)
-		return nil
+		return nil, err
 	}
-	log.Printf("M3U file parsed: %d entries", len(playlist.Entries))
 
-	return &M3UFileProvider{
-		playlist: *playlist,
-	}
-}
-
-func (p *M3UFileProvider) GetPlaylist() *m3uparser.M3UPlaylist {
-	return &p.playlist
+	return &config, nil
 }

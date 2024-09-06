@@ -19,38 +19,69 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package userstore
+package auth
 
 import (
 	"encoding/json"
-
-	"github.com/a13labs/m3uproxy/pkg/userstore/auth"
+	"fmt"
 )
 
-func InitializeAuthProvider(provider string, config json.RawMessage) error {
-	return auth.InitializeAuthProvider(provider, config)
+type AuthProvider interface {
+	AuthenticateUser(username, password string) bool
+	AddUser(username, password string) error
+	RemoveUser(username string) error
+	GetUsers() ([]string, error)
+	ChangePassword(username, password string) error
+	DropUsers() error
+	LoadUsers() error
+}
+
+type AuthProviderFactory func(config json.RawMessage) AuthProvider
+
+var authProvider AuthProvider
+
+func SetAuthProviderFactory(factory AuthProviderFactory, config json.RawMessage) {
+	authProvider = factory(config)
+}
+
+func GetAuthProvider() AuthProvider {
+	return authProvider
 }
 
 func AuthenticateUser(username, password string) bool {
-	return auth.AuthenticateUser(username, password)
+	return authProvider.AuthenticateUser(username, password)
 }
 
 func AddUser(username, password string) error {
-	return auth.AddUser(username, password)
+	return authProvider.AddUser(username, password)
 }
 
 func RemoveUser(username string) error {
-	return auth.RemoveUser(username)
+	return authProvider.RemoveUser(username)
 }
 
 func GetUsers() ([]string, error) {
-	return auth.GetUsers()
+	return authProvider.GetUsers()
 }
 
 func ChangePassword(username, password string) error {
-	return auth.ChangePassword(username, password)
+	return authProvider.ChangePassword(username, password)
 }
 
 func DropUsers() error {
-	return auth.DropUsers()
+	return authProvider.DropUsers()
+}
+
+func InitializeAuthProvider(provider string, config json.RawMessage) error {
+	switch provider {
+	case "file":
+		SetAuthProviderFactory(NewFileAuthProvider, config)
+	case "memory":
+		SetAuthProviderFactory(NewMemoryAuthProvider, config)
+	case "null":
+		SetAuthProviderFactory(NewNullAuthProvider, config)
+	default:
+		return fmt.Errorf("unsupported auth provider")
+	}
+	return nil
 }

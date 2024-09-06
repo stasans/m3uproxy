@@ -1,0 +1,10 @@
+{
+    "playlist": "conf/playlist.json",
+    "epg": "",
+    "port": 8080,
+    "no_service_image": "assets/no_service_pt.png",
+    "auth": {
+        "provider": "memory",
+        "settings": {}
+    }
+}

@@ -28,6 +28,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	rootCmd "github.com/a13labs/m3uproxy/cmd"
 )
 
 func loadContent(filePath string) (string, error) {
@@ -60,9 +62,9 @@ func loadContent(filePath string) (string, error) {
 	}
 }
 
-func setupLogging() {
-	if logFile != "" {
-		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+func setupLogging(config *rootCmd.Config) {
+	if config.LogFile != "" {
+		file, err := os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
 			log.Fatalf("Failed to open log file: %v", err)
 		}

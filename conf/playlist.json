@@ -1,0 +1,35 @@
+{
+    "providers": {
+        "iptv.org": {
+            "categories": [
+                "general",
+                "animation",
+                "business",
+                "comedy",
+                "culture",
+                "documentary",
+                "entertainment",
+                "movies",
+                "music",
+                "news",
+                "outdoor",
+                "relax",
+                "science",
+                "series",
+                "sports",
+                "travel"
+            ],
+            "countries": [
+                "UK",
+                "US"
+            ]
+        }
+    },
+    "providers_order": [
+        "iptv.org"
+    ],
+    "channel_order": [],
+    "overrides": [
+        {}
+    ]
+}

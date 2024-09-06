@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"time"
 
+	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 	"github.com/a13labs/m3uproxy/pkg/streamstore"
@@ -71,19 +72,22 @@ func loadStreams(path string) error {
 	return nil
 }
 
-func setupStreams(scanTime int) {
+func setupStreams(config *rootCmd.Config) {
 
 	go func() {
 		for {
 			log.Println("Streams loading started")
-			err := loadStreams(m3uFilePath)
+			err := loadStreams(config.Playlist)
 			if err != nil {
 				log.Printf("Failed to load streams: %v\n", err)
 			}
 			log.Println("Checking streams availability, this may take a while")
 			streamstore.CheckStreams()
 			log.Println("Streams loading completed")
-			<-time.After(time.Duration(scanTime) * time.Second)
+			if config.ScanTime == 0 {
+				config.ScanTime = 24 * 60 * 60
+			}
+			<-time.After(time.Duration(config.ScanTime) * time.Second)
 		}
 	}()
 }

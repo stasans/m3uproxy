@@ -251,7 +251,7 @@ func (p *IPTVOrgProvider) GetPlaylist() *m3uparser.M3UPlaylist {
 	return &p.playlist
 }
 
-func NewIPTVOrgProvider(config string) *IPTVOrgProvider {
+func NewIPTVOrgProvider(config json.RawMessage) *IPTVOrgProvider {
 
 	cfg := IPTVOrgConfig{}
 	err := json.Unmarshal([]byte(config), &cfg)

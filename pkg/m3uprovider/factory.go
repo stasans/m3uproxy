@@ -41,13 +41,13 @@ type entryOverride struct {
 }
 
 type playlistConfig struct {
-	Providers         map[string]interface{} `json:"providers"`
-	ProvidersPriority []string               `json:"providers_priority"`
-	ChannelOrder      []string               `json:"channel_order"`
-	Overrides         []entryOverride        `json:"overrides"`
+	Providers         map[string]json.RawMessage `json:"providers"`
+	ProvidersPriority []string                   `json:"providers_priority"`
+	ChannelOrder      []string                   `json:"channel_order"`
+	Overrides         []entryOverride            `json:"overrides"`
 }
 
-func NewProvider(name, config string) types.M3UProvider {
+func NewProvider(name string, config json.RawMessage) types.M3UProvider {
 	switch name {
 	case "iptv.org":
 		return iptvorg.NewIPTVOrgProvider(config)
@@ -60,14 +60,14 @@ func NewProvider(name, config string) types.M3UProvider {
 
 func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 
-	configData, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
-
 		return nil, err
 	}
+	defer file.Close()
 
 	config := playlistConfig{}
-	err = json.Unmarshal([]byte(configData), &config)
+	err = json.NewDecoder(file).Decode(&config)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,6 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 		if len(config.ProvidersPriority) != len(config.Providers) {
 			return nil, err
 		}
-
 		providersPriority = append(providersPriority, config.ProvidersPriority...)
 	} else {
 		for providerName := range config.Providers {
@@ -86,44 +85,26 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 	}
 
 	playlists := make(map[string]*m3uparser.M3UPlaylist)
-
 	for _, providerName := range providersPriority {
+
+		provider := NewProvider(providerName, config.Providers[providerName])
+		if provider == nil {
+			return nil, errors.New("provider not available '" + providerName + "'")
+		}
+
 		log.Printf("Provider: %s\n", providerName)
-
-		providerConfig := config.Providers[providerName]
-		providerConfigData, err := json.Marshal(providerConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		if providerName == "iptv.org" {
-			provider := iptvorg.NewIPTVOrgProvider(string(providerConfigData))
-			if provider == nil {
-				return nil, err
-			}
-			playlists[providerName] = provider.GetPlaylist()
-			continue
-		}
-
-		if providerName == "file" {
-			provider := file.NewM3UFileProvider(string(providerConfigData))
-			if provider == nil {
-				return nil, err
-			}
-			playlists[providerName] = provider.GetPlaylist()
-			continue
-		}
-
-		return nil, errors.New("provider not available")
+		playlists[providerName] = provider.GetPlaylist()
 	}
 
 	log.Printf("%d playlists loaded", len(playlists))
-	log.Println("Merging playlists according to the priority defined, duplicates will be skipped")
+	log.Println("Merging playlists according to the priority defined, duplicates will be skipped.")
+
 	masterPlaylist := m3uparser.M3UPlaylist{
 		Version: 3,
 		Entries: make(m3uparser.M3UEntries, 0),
 		Tags:    make(m3uparser.M3UTags, 0),
 	}
+
 	for _, playlist := range playlists {
 		for _, entry := range playlist.Entries {
 			tvgId := entry.TVGTags.GetValue("tvg-id")
@@ -132,7 +113,7 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 				continue
 			}
 			if masterPlaylist.GetEntryByTvgTag("tvg-id", tvgId) != nil {
-				log.Printf("Duplicate entry: %s, skipping.", entry.Title)
+				log.Printf("Duplicate entry: '%s', skipping.", entry.Title)
 				continue
 			}
 			masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
@@ -144,21 +125,17 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 		for _, override := range config.Overrides {
 			entry := masterPlaylist.GetEntryByTvgTag("tvg-id", override.Channel)
 			if entry == nil {
-				log.Printf("Channel %s not found, skipping override", override.Channel)
 				continue
 			}
-			log.Printf("Applying override for channel %s", entry.Title)
+			log.Printf("Applying override for channel '%s'.", entry.Title)
 			if override.Disabled {
-				log.Printf("Disabling channel %s", entry.Title)
 				masterPlaylist.RemoveEntryByTvgTag("tvg-id", override.Channel)
 				continue
 			}
 			if override.URL != "" {
-				log.Printf("Overriding URL for channel %s", entry.Title)
 				entry.URI = override.URL
 			}
 			if len(override.Headers) > 0 {
-				log.Printf("Adding headers for channel %s", entry.Title)
 				for k, v := range override.Headers {
 					entry.Tags = append(entry.Tags, m3uparser.M3UTag{
 						Tag:   "M3UPROXYHEADER",
@@ -172,17 +149,19 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 	}
 
 	if len(config.ChannelOrder) > 0 {
-		log.Println("Ordering playlist by channel order")
-		orderedPlaylist := make(m3uparser.M3UEntries, 0)
-		for _, channel := range config.ChannelOrder {
-			entry := masterPlaylist.GetEntryByTvgTag("tvg-id", channel)
-			if entry != nil {
-				orderedPlaylist = append(orderedPlaylist, *entry)
-				masterPlaylist.RemoveEntryByTvgTag("tvg-id", channel)
+		log.Println("Ordering playlist by provided channel order.")
+
+		for needle, channel := range config.ChannelOrder {
+			for pos := needle; pos < len(masterPlaylist.Entries); pos++ {
+				if masterPlaylist.Entries[pos].TVGTags.GetValue("tvg-id") == channel {
+					if needle == pos {
+						break
+					}
+					masterPlaylist.Entries[needle], masterPlaylist.Entries[pos] = masterPlaylist.Entries[pos], masterPlaylist.Entries[needle]
+					break
+				}
 			}
 		}
-		orderedPlaylist = append(orderedPlaylist, masterPlaylist.Entries...)
-		masterPlaylist.Entries = orderedPlaylist
 	}
 
 	return &masterPlaylist, nil

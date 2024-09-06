@@ -23,7 +23,6 @@ package m3uparser
 
 import (
 	"bufio"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -160,7 +159,6 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 				if len(parts) > 0 {
 					currentEntry.Duration = parseDuration(parts[0])
 					currentEntry.TVGTags = ParseTVGTags(parts[0][2:])
-					log.Println("TVGTags: ", currentEntry.TVGTags)
 				} else {
 					currentEntry.Duration = -1
 				}
