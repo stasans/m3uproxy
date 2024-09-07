@@ -78,6 +78,13 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			continue
 		}
 
+		tvgId := entry.TVGTags.GetValue("tvg-id")
+		radio := entry.TVGTags.GetValue("radio")
+		if tvgId == "" && radio == "" {
+			log.Printf("Missing tvg-id or radio tag for stream %s\n", entry.URI)
+			continue
+		}
+
 		parsedURL, err := url.Parse(entry.URI)
 		if err != nil {
 			log.Printf("Failed to parse URL: %s\n", entry.URI)
