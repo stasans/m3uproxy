@@ -38,13 +38,14 @@ import (
 )
 
 type Stream struct {
-	index    int
-	m3u      m3uparser.M3UEntry
-	prefix   string
-	active   bool
-	playlist *m3u8.MasterPlaylist
-	mux      *sync.Mutex
-	headers  map[string]string
+	index     int
+	m3u       m3uparser.M3UEntry
+	prefix    string
+	active    bool
+	playlist  *m3u8.MasterPlaylist
+	mux       *sync.Mutex
+	headers   map[string]string
+	httpProxy string
 }
 
 type StreamRequestOptions struct {
@@ -111,12 +112,23 @@ func (stream *Stream) HttpHeaders() map[string]string {
 
 func (stream *Stream) HealthCheck(timeout int) {
 
-	client := &http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-	}
-
 	stream.mux.Lock()
 	defer stream.mux.Unlock()
+
+	transport := http.DefaultTransport.(*http.Transport)
+	if stream.httpProxy != "" {
+		proxyURL, err := url.Parse(stream.httpProxy)
+		if err == nil {
+			transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+		}
+	}
+
+	client := &http.Client{
+		Timeout:   time.Duration(timeout) * time.Second,
+		Transport: transport,
+	}
 
 	stream.active = false
 	stream.playlist = nil
@@ -187,9 +199,6 @@ func (stream *Stream) HealthCheck(timeout int) {
 }
 
 func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) error {
-	client := &http.Client{
-		Timeout: time.Duration(defaultTimeout) * time.Second,
-	}
 
 	vars := mux.Vars(r)
 	path := vars["path"]
@@ -199,6 +208,21 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) error {
 	if !stream.active {
 		stream.mux.Unlock()
 		return errors.New("stream not active")
+	}
+
+	transport := http.DefaultTransport.(*http.Transport)
+	if stream.httpProxy != "" {
+		proxyURL, err := url.Parse(stream.httpProxy)
+		if err == nil {
+			transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+		}
+	}
+
+	client := &http.Client{
+		Timeout:   time.Duration(defaultTimeout) * time.Second,
+		Transport: transport,
 	}
 
 	opts := StreamRequestOptions{}

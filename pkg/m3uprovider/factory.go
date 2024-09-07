@@ -34,10 +34,11 @@ import (
 )
 
 type entryOverride struct {
-	Channel  string            `json:"channel"`
-	URL      string            `json:"url,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
-	Disabled bool              `json:"disabled,omitempty"`
+	Channel   string            `json:"channel"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Disabled  bool              `json:"disabled,omitempty"`
+	HttpProxy string            `json:"http_proxy,omitempty"`
 }
 
 type playlistConfig struct {
@@ -145,6 +146,12 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 						Value: k + "=" + v,
 					})
 				}
+			}
+			if override.HttpProxy != "" {
+				entry.Tags = append(entry.Tags, m3uparser.M3UTag{
+					Tag:   "M3UPROXYTRANSPORT",
+					Value: "proxy=" + override.HttpProxy,
+				})
 			}
 			masterPlaylist.Entries[index] = entry
 		}

@@ -90,14 +90,29 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			prefix += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
 		}
 
+		proxy := ""
+		m3uproxyTags := entry.SearchTags("M3UPROXYTRANSPORT")
+		if len(m3uproxyTags) > 0 {
+			parts := strings.Split(m3uproxyTags[0].Value, "=")
+			if len(parts) == 2 {
+				switch parts[0] {
+				case "proxy":
+					proxy = parts[1]
+				default:
+					log.Printf("Unknown M3UPROXYTRANSPORT tag: %s\n", parts[0])
+				}
+			}
+		}
+
 		stream := Stream{
-			index:    i,
-			m3u:      entry,
-			prefix:   prefix,
-			active:   false,
-			playlist: nil,
-			headers:  nil,
-			mux:      &sync.Mutex{},
+			index:     i,
+			m3u:       entry,
+			prefix:    prefix,
+			active:    false,
+			playlist:  nil,
+			headers:   nil,
+			httpProxy: proxy,
+			mux:       &sync.Mutex{},
 		}
 		streams = append(streams, stream)
 	}
