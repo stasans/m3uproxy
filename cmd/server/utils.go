@@ -22,7 +22,6 @@ THE SOFTWARE.
 package server
 
 import (
-	"encoding/base64"
 	"io"
 	"log"
 	"net/http"
@@ -72,28 +71,4 @@ func setupLogging(config *rootCmd.Config) {
 	} else {
 		log.SetOutput(os.Stdout)
 	}
-}
-
-func verifyAuth(r *http.Request) (string, string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", "", false
-	}
-
-	authParts := strings.SplitN(authHeader, " ", 2)
-	if len(authParts) != 2 || authParts[0] != "Basic" {
-		return "", "", false
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(authParts[1])
-	if err != nil {
-		return "", "", false
-	}
-
-	credentials := strings.SplitN(string(decoded), ":", 2)
-	if len(credentials) != 2 {
-		return "", "", false
-	}
-
-	return credentials[0], credentials[1], true
 }

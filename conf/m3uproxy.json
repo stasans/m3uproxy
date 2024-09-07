@@ -1,10 +1,17 @@
 {
-    "playlist": "conf/playlist.json",
     "epg": "",
     "port": 8080,
-    "no_service_image": "assets/no_service_pt.jpg",
+    "stream_server": {
+        "playlist": "conf/playlist.json",
+        "no_service_image": "assets/no_service_pt.jpg",
+        "default_timeout": 3,
+        "max_workers": 10,
+        "hide_inactive": true
+    },
     "auth": {
-        "provider": "memory",
-        "settings": {}
+        "provider": "file",
+        "settings": {
+            "file_path": "cache/auth.json"
+        }
     }
 }

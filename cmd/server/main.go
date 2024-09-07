@@ -33,7 +33,7 @@ import (
 
 	"github.com/a13labs/m3uproxy/cmd"
 	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
+	"github.com/a13labs/m3uproxy/pkg/streamserver"
 	"github.com/a13labs/m3uproxy/pkg/userstore"
 	"github.com/spf13/cobra"
 )
@@ -50,34 +50,24 @@ var serverCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		log.Printf("Starting M3U Proxy Server\n")
-		log.Printf("Playlist: %s\n", config.Playlist)
-		log.Printf("EPG: %s\n", config.Epg)
-		log.Printf("No Service: %s\n", config.NoServiceImage)
-		log.Printf("Auth Provider: %s\n", config.Auth.Provider)
-		log.Printf("Port: %d\n", config.Port)
+		setupLogging(config)
 
+		log.Printf("Starting M3U Proxy Server\n")
+		log.Printf("EPG: %s\n", config.Epg)
+
+		log.Printf("Auth Provider: %s\n", config.Auth.Provider)
 		err = userstore.InitializeAuthProvider(config.Auth.Provider, config.Auth.Settings)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
 		}
 
-		setupLogging(config)
-		configureStreams(config)
+		streamserver.Start(config.StreamServer)
 
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", config.Port),
 			Handler: setupHandlers(config),
 		}
-
-		// Initialize FFmpeg
-		if err := ffmpeg.Initialize(); err != nil {
-			log.Fatalf("Failed to initialize FFmpeg: %v\n", err)
-		}
-
-		// Start the no service stream
-		startNoServiceStream(config)
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)
 		quit := make(chan os.Signal, 1)
@@ -95,7 +85,7 @@ var serverCmd = &cobra.Command{
 		fmt.Println("Shutting down server...")
 
 		// Stop the no service stream
-		stopNoServiceStream()
+		streamserver.Shutdown()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

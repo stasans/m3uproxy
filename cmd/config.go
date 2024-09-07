@@ -27,13 +27,11 @@ import (
 )
 
 type Config struct {
-	Playlist       string `json:"playlist"`
-	Epg            string `json:"epg"`
-	Port           int    `json:"port"`
-	LogFile        string `json:"log_file,omitempty"`
-	NoServiceImage string `json:"no_service_image,omitempty"`
-	ScanTime       int    `json:"scan_time,omitempty"`
-	Auth           struct {
+	Epg          string          `json:"epg"`
+	Port         int             `json:"port"`
+	LogFile      string          `json:"log_file,omitempty"`
+	StreamServer json.RawMessage `json:"stream_server"`
+	Auth         struct {
 		Provider string          `json:"provider"`
 		Settings json.RawMessage `json:"settings"`
 	} `json:"auth"`

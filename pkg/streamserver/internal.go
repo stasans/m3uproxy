@@ -19,20 +19,37 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package server
+package streamserver
 
 import (
+	"encoding/base64"
 	"errors"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
+	"sync"
 
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
-	"github.com/a13labs/m3uproxy/pkg/streamstore"
 )
+
+func monitorWorker(stream <-chan int, stop <-chan bool, wg *sync.WaitGroup) {
+
+	defer wg.Done()
+	for s := range stream {
+		select {
+		case <-stop:
+			return
+		default:
+			streams[s].HealthCheck(defaultTimeout)
+			if !streams[s].active {
+				log.Printf("Stream '%s' is offline.\n", streams[s].m3u.Title)
+			}
+		}
+	}
+}
 
 func loadAndParsePlaylist(path string) error {
 
@@ -64,30 +81,46 @@ func loadAndParsePlaylist(path string) error {
 
 	log.Printf("Loaded %d streams from %s\n", playlist.StreamCount(), path)
 
-	if err := streamstore.AddStreams(playlist); err != nil {
+	if err := AddStreams(playlist); err != nil {
 		return err
 	}
 
-	log.Printf("Loaded %d streams\n", streamstore.StreamCount())
+	log.Printf("Loaded %d streams\n", len(streams))
 	return nil
 }
 
-func configureStreams(config *rootCmd.Config) {
+func verifyAuth(r *http.Request) (string, string, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return "", "", false
+	}
 
-	go func() {
-		for {
-			log.Println("Streams loading started")
-			err := loadAndParsePlaylist(config.Playlist)
-			if err != nil {
-				log.Printf("Failed to load streams: %v\n", err)
-			}
-			log.Println("Checking streams availability, this may take a while")
-			streamstore.MonitorStreams()
-			log.Println("Streams loading completed")
-			if config.ScanTime == 0 {
-				config.ScanTime = 24 * 60 * 60
-			}
-			<-time.After(time.Duration(config.ScanTime) * time.Second)
-		}
-	}()
+	authParts := strings.SplitN(authHeader, " ", 2)
+	if len(authParts) != 2 || authParts[0] != "Basic" {
+		return "", "", false
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(authParts[1])
+	if err != nil {
+		return "", "", false
+	}
+
+	credentials := strings.SplitN(string(decoded), ":", 2)
+	if len(credentials) != 2 {
+		return "", "", false
+	}
+
+	return credentials[0], credentials[1], true
+}
+
+func updatePlaylistAndMonitor(config StreamServerConfig, stopServer chan bool, quit chan bool) {
+	log.Println("Streams loading started")
+	err := loadAndParsePlaylist(config.Playlist)
+	if err != nil {
+		log.Printf("Failed to load streams: %v\n", err)
+	}
+	log.Println("Checking streams availability, this may take a while")
+	MonitorStreams(stopServer, quit)
+	log.Println("Streams loading completed")
+
 }
