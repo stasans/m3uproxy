@@ -61,7 +61,7 @@ func streamsHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.WriteHeader(http.StatusOK)
-	playlist := streamstore.ExportPlaylist(r.Host, m3uProxyPath, token)
+	playlist := streamstore.BuildM3UPlaylist(r.Host, m3uProxyPath, token)
 	w.Write([]byte(playlist.String()))
 	log.Printf("Generated M3U playlist for user %s\n", username)
 }
@@ -92,7 +92,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streamstore.StreamStreamHandler(w, r); err != nil {
+	if err := streamstore.Serve(w, r); err != nil {
 		log.Printf("Error serving stream stream: %v\n", err)
 		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
 	}

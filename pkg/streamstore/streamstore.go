@@ -40,60 +40,73 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type Stream struct {
+type StreamCache struct {
 	index    int
-	m3uEntry m3uparser.M3UEntry
-	basePath string
+	m3u      m3uparser.M3UEntry
+	prefix   string
 	active   bool
 	playlist *m3u8.MasterPlaylist
 	mux      *sync.Mutex
+	client   http.Client
 	headers  map[string]string
 }
 
 var (
-	streams         = make([]Stream, 0)
+	streamsCaches   = make([]StreamCache, 0)
 	defaultTimeout  = 3
 	streamsStoreMux sync.Mutex
 )
 
-func checkStreamOnline(stream *Stream, timeout int) {
+func (stream *StreamCache) HttpHeaders() map[string]string {
+
+	if stream.headers != nil {
+		stream.headers = make(map[string]string)
+		m3uproxyTags := stream.m3u.SearchTags("M3UPROXYHEADER")
+		for _, tag := range m3uproxyTags {
+			parts := strings.Split(tag.Value, "=")
+			if len(parts) == 2 {
+				stream.headers[parts[0]] = parts[1]
+			}
+		}
+		vlcTags := stream.m3u.SearchTags("EXTVLCOPT")
+		for _, tag := range vlcTags {
+			parts := strings.Split(tag.Value, "=")
+			if len(parts) == 2 {
+				switch parts[0] {
+				case "http-user-agent":
+					stream.headers["User-Agent"] = parts[1]
+				case "http-referrer":
+					stream.headers["Referer"] = parts[1]
+				default:
+				}
+			}
+		}
+	}
+	return stream.headers
+}
+
+func (stream *StreamCache) HealthCheck(timeout int) {
 	stream.mux.Lock()
 	defer stream.mux.Unlock()
 	stream.active = false
 	stream.playlist = nil
-	client := http.Client{
-		Timeout: time.Duration(timeout) * time.Second,
-	}
+	stream.client.Timeout = time.Duration(timeout) * time.Second
 
-	req, err := http.NewRequest("GET", stream.m3uEntry.URI, nil)
+	req, err := http.NewRequest("GET", stream.m3u.URI, nil)
 	if err != nil {
 		return
 	}
 
-	for key := range stream.headers {
-		req.Header.Add(key, stream.headers[key])
+	headers := stream.HttpHeaders()
+	for key := range headers {
+		req.Header.Add(key, headers[key])
 	}
 
-	vlcTags := stream.m3uEntry.GetTag("EXTVLCOPT")
-	for _, tag := range vlcTags {
-		header_k_v := strings.Split(tag.Value, "=")
-		if len(header_k_v) == 2 {
-			if header_k_v[0] == "http-user-agent" {
-				req.Header.Add("User-Agent", header_k_v[1])
-				continue
-			}
-			if header_k_v[0] == "http-referrer" {
-				req.Header.Add("Referer", header_k_v[1])
-				continue
-			}
-		}
-	}
-
-	resp, err := client.Do(req)
-
+	resp, err := stream.client.Do(req)
 	if err != nil {
 		return
 	}
+
 	defer resp.Body.Close()
 
 	status := resp.StatusCode / 100
@@ -101,26 +114,22 @@ func checkStreamOnline(stream *Stream, timeout int) {
 		return
 	}
 
-	realURL := resp.Request.URL.String()
-	if realURL != stream.m3uEntry.URI {
-		parsedURL, err := url.Parse(realURL)
-		log.Printf("Redirected to: %s\n", realURL)
+	streamUrl, _ := url.Parse(stream.m3u.URI)
 
-		if err != nil {
-			log.Printf("Failed to parse URL: %s\n", realURL)
-			return
+	// Check if the URL has changed (redirects) and update the stream URL
+	if *resp.Request.URL != *streamUrl {
+
+		prefix := ""
+
+		if strings.LastIndex(resp.Request.URL.Path, "/") != -1 {
+			prefix += resp.Request.URL.Path[:strings.LastIndex(resp.Request.URL.Path, "/")]
 		}
 
-		basePath := ""
-
-		if strings.LastIndex(parsedURL.Path, "/") != -1 {
-			basePath += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
-		}
-
-		stream.m3uEntry.URI = realURL
-		stream.basePath = basePath
+		stream.m3u.URI = resp.Request.URL.String()
+		stream.prefix = prefix
 	}
 
+	// Check if the stream is a valid m3u8 playlist
 	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
 	if err != nil {
 		return
@@ -132,10 +141,76 @@ func checkStreamOnline(stream *Stream, timeout int) {
 	}
 }
 
-func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
+func (stream *StreamCache) Serve(w http.ResponseWriter, r *http.Request) error {
+	vars := mux.Vars(r)
+	path := vars["path"]
+
+	stream.mux.Lock()
+	defer stream.mux.Unlock()
+
+	if !stream.active {
+		return errors.New("stream not active")
+	}
+
+	streamURL, _ := url.Parse(stream.m3u.URI)
+
+	if path == "playlist.m3u8" {
+		if stream.playlist != nil {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(stream.playlist.String()))
+			return nil
+		}
+	} else {
+		if stream.prefix != "" {
+			streamURL.Path = stream.prefix + "/" + path
+		} else {
+			streamURL.Path = path
+		}
+		streamURL.RawQuery = r.URL.RawQuery
+	}
+
+	req, _ := http.NewRequest(r.Method, streamURL.String(), nil)
+
+	headers := stream.HttpHeaders()
+	for key := range headers {
+		req.Header.Add(key, headers[key])
+	}
+
+	resp, err := stream.client.Do(req)
+
+	if err != nil {
+		return errors.New("failed to fetch stream")
+	}
+
+	defer resp.Body.Close()
+
+	code := resp.StatusCode / 100
+	if code != 2 {
+		return errors.New("failed to fetch stream")
+	}
+
+	if resp.StatusCode == http.StatusNoContent {
+		return errors.New("no content")
+	}
+
+	for key := range resp.Header {
+		w.Header().Add(key, resp.Header.Get(key))
+	}
+
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+
+	return nil
+
+}
+
+func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
+
+	streamsCaches = make([]StreamCache, 0)
 
 	for i, entry := range playlist.Entries {
 
@@ -149,49 +224,39 @@ func LoadPlaylist(playlist *m3uparser.M3UPlaylist) error {
 			continue
 		}
 
-		basePath := ""
+		prefix := ""
 
 		if strings.LastIndex(parsedURL.Path, "/") != -1 {
-			basePath += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
+			prefix += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
 		}
 
-		internalTags := entry.GetTag("M3UPROXYHEADER")
-		headers := make(map[string]string)
-		for _, tag := range internalTags {
-			parts := strings.Split(tag.Value, "=")
-			if len(parts) == 2 {
-				headers[parts[0]] = parts[1]
-			}
-		}
-
-		stream := Stream{
+		stream := StreamCache{
 			index:    i,
-			m3uEntry: entry,
-			basePath: basePath,
+			m3u:      entry,
+			prefix:   prefix,
 			active:   false,
 			playlist: nil,
-			headers:  headers,
 			mux:      &sync.Mutex{},
 		}
-		streams = append(streams, stream)
+		streamsCaches = append(streamsCaches, stream)
 	}
 
 	return nil
 }
 
-func ExportPlaylist(host, path, token string) m3uparser.M3UPlaylist {
+func BuildM3UPlaylist(host, path, token string) m3uparser.M3UPlaylist {
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
 	playlist := m3uparser.M3UPlaylist{
 		Entries: make([]m3uparser.M3UEntry, 0),
 	}
-	for i, stream := range streams {
+	for i, stream := range streamsCaches {
 		entry := m3uparser.M3UEntry{
 			URI:   fmt.Sprintf("http://%s/%s/%s/%d/playlist.m3u8", host, path, token, i),
-			Title: stream.m3uEntry.Title,
+			Title: stream.m3u.Title,
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}
-		entry.Tags = append(entry.Tags, stream.m3uEntry.Tags...)
+		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
 		playlist.Entries = append(playlist.Entries, entry)
 	}
 	return playlist
@@ -205,50 +270,49 @@ func GetDefaultTimeout() int {
 	return defaultTimeout
 }
 
-func GetStreamCount() int {
+func StreamCount() int {
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
-	return len(streams)
+	return len(streamsCaches)
 }
 
-func ClearStreams() {
+func Clear() {
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
-	streams = make([]Stream, 0)
+	streamsCaches = make([]StreamCache, 0)
 }
 
-func SetStreamActive(index int, active bool) error {
+func ActivateStream(index int, active bool) error {
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
-	if index < 0 || index >= len(streams) {
-		return fmt.Errorf("Stream cache data not found")
+	if index < 0 || index >= len(streamsCaches) {
+		return fmt.Errorf("stream cache data not found")
 	}
-	streams[index].mux.Lock()
-	streams[index].active = active
-	streams[index].mux.Unlock()
+	streamsCaches[index].mux.Lock()
+	streamsCaches[index].active = active
+	streamsCaches[index].mux.Unlock()
 	return nil
 }
 
-func IsStreamActive(index int) bool {
+func StreamIsActive(index int) bool {
 	streamsStoreMux.Lock()
 	defer streamsStoreMux.Unlock()
-	if index < 0 || index >= len(streams) {
+	if index < 0 || index >= len(streamsCaches) {
 		return false
 	}
-	return streams[index].active
+	return streamsCaches[index].active
 }
 
-func CheckStreams() {
-
-	for i := 0; i < len(streams); i++ {
-		checkStreamOnline(&streams[i], defaultTimeout)
-		if !streams[i].active {
+func MonitorStreams() {
+	for i := 0; i < len(streamsCaches); i++ {
+		streamsCaches[i].HealthCheck(defaultTimeout)
+		if !streamsCaches[i].active {
 			log.Printf("Stream %d is offline\n", i)
 		}
 	}
 }
 
-func StreamStreamHandler(w http.ResponseWriter, r *http.Request) error {
+func Serve(w http.ResponseWriter, r *http.Request) error {
 
 	vars := mux.Vars(r)
 
@@ -257,74 +321,5 @@ func StreamStreamHandler(w http.ResponseWriter, r *http.Request) error {
 		return errors.New("invalid stream ID")
 	}
 
-	if !IsStreamActive(streamID) {
-		log.Printf("Stream %d not available\n", streamID)
-		return errors.New("Stream not available")
-	}
-
-	path := vars["path"]
-
-	stream := streams[streamID]
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-
-	if path == "playlist.m3u8" && stream.playlist != nil {
-		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(stream.playlist.String()))
-		return nil
-	}
-
-	serviceURL, _ := url.Parse(stream.m3uEntry.URI)
-
-	if path != "playlist.m3u8" {
-		if strings.HasPrefix(serviceURL.Path, stream.basePath) {
-			serviceURL.Path = stream.basePath + "/" + path
-			serviceURL.RawQuery = r.URL.RawQuery
-		} else {
-			serviceURL.Path = path
-		}
-	}
-
-	req, _ := http.NewRequest(r.Method, serviceURL.String(), r.Body)
-
-	for key := range stream.headers {
-		r.Header.Add(key, stream.headers[key])
-	}
-
-	for key := range r.Header {
-		if key == "Host" {
-			continue
-		} else {
-			req.Header.Add(key, r.Header.Get(key))
-		}
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		return errors.New("failed to fetch stream")
-	}
-
-	code := resp.StatusCode / 100
-	if code == 2 {
-
-		if resp.StatusCode == http.StatusNoContent {
-			return errors.New("no content")
-		}
-
-		defer resp.Body.Close()
-
-		for key := range resp.Header {
-			w.Header().Add(key, resp.Header.Get(key))
-		}
-
-		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
-
-		return nil
-	}
-
-	log.Printf("Failed to fetch stream: %d\n", resp.StatusCode)
-	return errors.New("failed to fetch stream")
+	return streamsCaches[streamID].Serve(w, r)
 }

@@ -64,7 +64,7 @@ var serverCmd = &cobra.Command{
 		}
 
 		setupLogging(config)
-		setupStreams(config)
+		configureStreams(config)
 
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", config.Port),

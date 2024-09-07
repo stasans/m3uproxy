@@ -112,7 +112,7 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 				masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
 				continue
 			}
-			if masterPlaylist.GetEntryByTvgTag("tvg-id", tvgId) != nil {
+			if masterPlaylist.SearchEntryByTvgTag("tvg-id", tvgId) != nil {
 				log.Printf("Duplicate entry: '%s', skipping.", entry.Title)
 				continue
 			}
@@ -121,9 +121,9 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 	}
 
 	if len(config.Overrides) > 0 {
-		log.Println("Applying overrides")
+		log.Println("Applying overrides.")
 		for _, override := range config.Overrides {
-			index := masterPlaylist.GetEntryIndexByTvgTag("tvg-id", override.Channel)
+			index := masterPlaylist.SearchEntryIndexByTvgTag("tvg-id", override.Channel)
 			if index == -1 {
 				log.Printf("Channel '%s' not found, skipping override.", override.Channel)
 				continue

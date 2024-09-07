@@ -39,15 +39,15 @@ func TestLoadPlaylist(t *testing.T) {
 	}
 
 	// Load the playlist into the channel store
-	err := streamstore.LoadPlaylist(playlist)
+	err := streamstore.AddStreams(playlist)
 	if err != nil {
 		t.Errorf("Failed to load playlist: %v", err)
 	}
 
 	// Verify that the number of channels is correct
 	expectedChannelCount := 3
-	if streamstore.GetStreamCount() != expectedChannelCount {
-		t.Errorf("Expected %d channels, but got %d", expectedChannelCount, streamstore.GetStreamCount())
+	if streamstore.StreamCount() != expectedChannelCount {
+		t.Errorf("Expected %d channels, but got %d", expectedChannelCount, streamstore.StreamCount())
 	}
 }
 

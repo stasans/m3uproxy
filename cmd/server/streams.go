@@ -34,7 +34,7 @@ import (
 	"github.com/a13labs/m3uproxy/pkg/streamstore"
 )
 
-func loadStreams(path string) error {
+func loadAndParsePlaylist(path string) error {
 
 	// If extension is .m3u, load as a m3u file
 	// Otherwise, load as a json file
@@ -62,27 +62,27 @@ func loadStreams(path string) error {
 		return errors.New("invalid file extension")
 	}
 
-	log.Printf("Loaded %d streams from %s\n", playlist.GetStreamCount(), path)
+	log.Printf("Loaded %d streams from %s\n", playlist.StreamCount(), path)
 
-	if err := streamstore.LoadPlaylist(playlist); err != nil {
+	if err := streamstore.AddStreams(playlist); err != nil {
 		return err
 	}
 
-	log.Printf("Loaded %d streams\n", streamstore.GetStreamCount())
+	log.Printf("Loaded %d streams\n", streamstore.StreamCount())
 	return nil
 }
 
-func setupStreams(config *rootCmd.Config) {
+func configureStreams(config *rootCmd.Config) {
 
 	go func() {
 		for {
 			log.Println("Streams loading started")
-			err := loadStreams(config.Playlist)
+			err := loadAndParsePlaylist(config.Playlist)
 			if err != nil {
 				log.Printf("Failed to load streams: %v\n", err)
 			}
 			log.Println("Checking streams availability, this may take a while")
-			streamstore.CheckStreams()
+			streamstore.MonitorStreams()
 			log.Println("Streams loading completed")
 			if config.ScanTime == 0 {
 				config.ScanTime = 24 * 60 * 60

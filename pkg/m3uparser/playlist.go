@@ -58,7 +58,7 @@ func (playlist *M3UPlaylist) String() string {
 	return result
 }
 
-func (playlist *M3UPlaylist) GetEntryByTitle(title string) *M3UEntry {
+func (playlist *M3UPlaylist) SearchEntryByTitle(title string) *M3UEntry {
 	for _, entry := range playlist.Entries {
 		if entry.Title == title {
 			return &entry
@@ -67,7 +67,7 @@ func (playlist *M3UPlaylist) GetEntryByTitle(title string) *M3UEntry {
 	return nil
 }
 
-func (playlist *M3UPlaylist) GetEntryByURI(uri string) *M3UEntry {
+func (playlist *M3UPlaylist) SearchEntryByURI(uri string) *M3UEntry {
 	for _, entry := range playlist.Entries {
 		if entry.URI == uri {
 			return &entry
@@ -76,16 +76,16 @@ func (playlist *M3UPlaylist) GetEntryByURI(uri string) *M3UEntry {
 	return nil
 }
 
-func (playlist *M3UPlaylist) GetStreamCount() int {
+func (playlist *M3UPlaylist) StreamCount() int {
 	return len(playlist.Entries)
 }
 
-func (playlist *M3UPlaylist) GetEntryByTvgTag(tag, value string) *M3UEntry {
-	return playlist.Entries.GetByTvgTag(tag, value)
+func (playlist *M3UPlaylist) SearchEntryByTvgTag(tag, value string) *M3UEntry {
+	return playlist.Entries.SearchByTvgTag(tag, value)
 }
 
-func (playlist *M3UPlaylist) GetEntryIndexByTvgTag(tag, value string) int {
-	return playlist.Entries.GetIndexByTvgTag(tag, value)
+func (playlist *M3UPlaylist) SearchEntryIndexByTvgTag(tag, value string) int {
+	return playlist.Entries.SearchIndexByTvgTag(tag, value)
 }
 
 func (playlist *M3UPlaylist) RemoveEntryByTvgTag(tag, value string) {

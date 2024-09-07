@@ -44,22 +44,6 @@ type M3UEntry struct {
 
 type M3UEntries []M3UEntry
 
-func (entry *M3UEntry) GetTags() []M3UTag {
-	return entry.Tags
-}
-
-func (entry *M3UEntry) GetURI() string {
-	return entry.URI
-}
-
-func (entry *M3UEntry) GetDuration() int {
-	return entry.Duration
-}
-
-func (entry *M3UEntry) GetTitle() string {
-	return entry.Title
-}
-
 func (entry *M3UEntry) String() string {
 	var result string
 	for _, tag := range entry.Tags {
@@ -94,7 +78,7 @@ func (tags M3UTags) GetValue(tag string) string {
 	return ""
 }
 
-func (entry *M3UEntry) GetTag(tag string) []M3UTag {
+func (entry *M3UEntry) SearchTags(tag string) []M3UTag {
 	var result []M3UTag
 	for _, t := range entry.Tags {
 		if t.Tag == tag {
@@ -104,7 +88,7 @@ func (entry *M3UEntry) GetTag(tag string) []M3UTag {
 	return result
 }
 
-func (entries M3UEntries) GetByTvgTag(tag string, value string) *M3UEntry {
+func (entries M3UEntries) SearchByTvgTag(tag string, value string) *M3UEntry {
 	for _, entry := range entries {
 		if entry.TVGTags.GetValue(tag) == value {
 			return &entry
@@ -113,7 +97,7 @@ func (entries M3UEntries) GetByTvgTag(tag string, value string) *M3UEntry {
 	return nil
 }
 
-func (entries M3UEntries) GetIndexByTvgTag(tag string, value string) int {
+func (entries M3UEntries) SearchIndexByTvgTag(tag string, value string) int {
 	for i, entry := range entries {
 		if entry.TVGTags.GetValue(tag) == value {
 			return i
