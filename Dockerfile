@@ -24,7 +24,7 @@ COPY --from=builder /app/assets /app/assets
 COPY --from=builder /app/scripts/entrypoint.sh /app/entrypoint.sh
 
 RUN apk --no-cache add ca-certificates ffmpeg bash && \
-    mkdir -p /config 
+    mkdir -p /app/cache 
 
 WORKDIR /app
 

@@ -24,17 +24,12 @@ USERNAME=${USERNAME:-"admin"}
 PASSWORD=${PASSWORD:-"admin"}
 
 # Check if users.json exists, if not add users from environment variables
-if [ ! -f $USERSFILE ]; then
-  echo "Adding initial user."
-  if [ -n "$USERNAME" ] && [ -n "$PASSWORD" ]; then
-    echo "Adding user $USERNAME"
-    /app/m3uproxy users add -c $CONFIGFILE $USERNAME $PASSWORD
-    if [ $? -ne 0 ]; then
-        echo "Failed to add user $USERNAME"
-        exit 1
-    fi
-  fi
+if /app/m3uproxy users list -c $CONFIGFILE | grep -q $USERNAME; then
+  echo "User $USERNAME already exists, skipping user creation"
+else
+  echo "User $USERNAME does not exist, creating user."
+  /app/m3uproxy users add -c $CONFIGFILE $USERNAME $PASSWORD
 fi
 
 # Start m3uproxy
-/app/m3uproxy server -c $CONFIGFILE
+exec /app/m3uproxy server -c $CONFIGFILE

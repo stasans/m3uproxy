@@ -51,7 +51,7 @@ var playlistCmd = &cobra.Command{
 		}
 
 		// Load the playlist
-		masterPlaylist, err := m3uprovider.LoadPlaylist(configFile)
+		masterPlaylist, err := m3uprovider.LoadFromFile(configFile)
 		if err != nil {
 			cmd.Printf("Error loading playlist: %s\n", err)
 			os.Exit(1)

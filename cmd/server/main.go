@@ -74,15 +74,15 @@ var serverCmd = &cobra.Command{
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 		go func() {
-			fmt.Printf("Starting server on :%d", config.Port)
+			log.Printf("Server listening on %s.\n", server.Addr)
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				fmt.Println("Server failed:", err)
+				log.Println("Server failed:", err)
 			}
 		}()
 
 		<-quit // Wait for SIGINT or SIGTERM
 
-		fmt.Println("Shutting down server...")
+		log.Println("Shutting down server...")
 
 		// Stop the no service stream
 		streamserver.Shutdown()
@@ -91,10 +91,10 @@ var serverCmd = &cobra.Command{
 		defer cancel()
 
 		if err := server.Shutdown(ctx); err != nil {
-			fmt.Println("Server forced to shutdown:", err)
+			log.Println("Server forced to shutdown:", err)
 		}
 
-		fmt.Println("Server exiting")
+		log.Println("Server shutdown.")
 	},
 }
 

@@ -39,6 +39,7 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List users",
 	Run: func(cmd *cobra.Command, args []string) {
+
 		config, err := rootCmd.LoadConfig()
 		if err != nil {
 			cmd.PrintErrln(err)
@@ -57,7 +58,7 @@ var listCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		for _, user := range users {
-			cmd.Println(user)
+			cmd.OutOrStdout().Write([]byte(user + "\n"))
 		}
 		os.Exit(0)
 	},

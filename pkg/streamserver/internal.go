@@ -71,7 +71,7 @@ func loadAndParsePlaylist(path string) error {
 		}
 	} else if extension == ".json" {
 		log.Printf("Loading JSON file %s\n", path)
-		playlist, err = m3uprovider.LoadPlaylist(path)
+		playlist, err = m3uprovider.LoadFromFile(path)
 		if err != nil {
 			return err
 		}
