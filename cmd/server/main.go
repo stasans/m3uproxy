@@ -33,8 +33,8 @@ import (
 
 	"github.com/a13labs/m3uproxy/cmd"
 	rootCmd "github.com/a13labs/m3uproxy/cmd"
+	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/streamserver"
-	"github.com/a13labs/m3uproxy/pkg/userstore"
 	"github.com/spf13/cobra"
 )
 
@@ -55,8 +55,7 @@ var serverCmd = &cobra.Command{
 		log.Printf("Starting M3U Proxy Server\n")
 		log.Printf("EPG: %s\n", config.Epg)
 
-		log.Printf("Auth Provider: %s\n", config.Auth.Provider)
-		err = userstore.InitializeAuthProvider(config.Auth.Provider, config.Auth.Settings)
+		err = auth.InitializeAuth(config.Auth)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)

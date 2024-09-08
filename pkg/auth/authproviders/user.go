@@ -19,46 +19,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package auth
+package authproviders
 
-import (
-	"encoding/json"
-	"fmt"
-)
-
-type NullAuthProvider struct {
-	AuthProvider
+type User struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
-func NewNullAuthProvider(config json.RawMessage) AuthProvider {
-	return &NullAuthProvider{}
-}
-
-func (a *NullAuthProvider) AuthenticateUser(username, password string) bool {
-	return true
-}
-
-func (a *NullAuthProvider) AddUser(username, password string) error {
-	return nil
-}
-
-func (a *NullAuthProvider) RemoveUser(username string) error {
-	return nil
-}
-
-func (a *NullAuthProvider) GetUsers() ([]string, error) {
-	users := make([]string, 0)
-	return users, nil
-}
-
-func (a *NullAuthProvider) ChangePassword(username, password string) error {
-	return nil
-}
-
-func (a *NullAuthProvider) DropUsers() error {
-	return nil
-}
-
-func (a *NullAuthProvider) LoadUsers() error {
-	return fmt.Errorf("not implemented")
+type Users struct {
+	Users []User `json:"users"`
 }

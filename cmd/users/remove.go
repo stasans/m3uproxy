@@ -26,7 +26,7 @@ import (
 	"os"
 
 	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/userstore"
+	"github.com/a13labs/m3uproxy/pkg/auth"
 
 	"github.com/spf13/cobra"
 )
@@ -50,13 +50,13 @@ var removeCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		err = userstore.InitializeAuthProvider(config.Auth.Provider, config.Auth.Settings)
+		err = auth.InitializeAuth(config.Auth)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
 		}
 
-		err = userstore.RemoveUser(args[0])
+		err = auth.RemoveUser(args[0])
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)

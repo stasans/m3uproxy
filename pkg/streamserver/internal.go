@@ -87,7 +87,7 @@ func loadAndParsePlaylist(path string) error {
 	return nil
 }
 
-func verifyAuth(r *http.Request) (string, string, bool) {
+func getUserCredentials(r *http.Request) (string, string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		return "", "", false
@@ -109,6 +109,20 @@ func verifyAuth(r *http.Request) (string, string, bool) {
 	}
 
 	return credentials[0], credentials[1], true
+}
+
+func getJWTToken(r *http.Request) (string, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return "", false
+	}
+
+	authParts := strings.SplitN(authHeader, " ", 2)
+	if len(authParts) != 2 || authParts[0] != "Bearer" {
+		return "", false
+	}
+
+	return authParts[1], true
 }
 
 func updatePlaylistAndMonitor(config StreamServerConfig, stopServer chan bool, quit chan bool) {

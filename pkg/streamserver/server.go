@@ -32,9 +32,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/a13labs/m3uproxy/pkg/userstore"
 
 	"github.com/gorilla/mux"
 )
@@ -281,7 +281,7 @@ func HandleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	token := vars["token"]
 
-	ok := userstore.ValidateSingleToken(token)
+	ok := auth.VerifyToken(token)
 	if !ok {
 		http.Error(w, "Invalid token", http.StatusUnauthorized)
 		log.Printf("Unauthorized access to stream stream %s: missing token\n", r.URL.Path)
@@ -318,18 +318,19 @@ func HandleInternalStream(w http.ResponseWriter, r *http.Request) {
 
 func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 
-	username, password, ok := verifyAuth(r)
+	token, ok := getJWTToken(r)
 	if !ok {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
-		http.Error(w, "Authorization header is required", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream: invalid credentials\n")
-		return
-	}
-
-	token := userstore.GetActiveToken(username)
-	if token == "" {
 		var err error
-		token, err = userstore.GenerateToken(username, password)
+
+		username, password, ok := getUserCredentials(r)
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
+			http.Error(w, "Authorization header is required", http.StatusUnauthorized)
+			log.Printf("Unauthorized access to stream: invalid credentials\n")
+			return
+		}
+
+		token, err = auth.CreateToken(username, password)
 		if err != nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
 			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
@@ -337,8 +338,6 @@ func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	log.Printf("Generated M3U playlist for user %s\n", username)
 
 	streamsMutex.Lock()
 	defer streamsMutex.Unlock()

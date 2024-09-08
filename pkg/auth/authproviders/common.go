@@ -19,13 +19,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package auth
+package authproviders
 
-type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
 
-type Users struct {
-	Users []User `json:"users"`
+func HashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
 }

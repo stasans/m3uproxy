@@ -19,38 +19,66 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package userstore
+package auth
 
 import (
 	"encoding/json"
+	"errors"
 
-	"github.com/a13labs/m3uproxy/pkg/userstore/auth"
+	"github.com/a13labs/m3uproxy/pkg/auth/authproviders"
 )
 
-func InitializeAuthProvider(provider string, config json.RawMessage) error {
-	return auth.InitializeAuthProvider(provider, config)
+type AuthConfig struct {
+	Provider       string          `json:"provider"`
+	SecretKey      string          `json:"secret_key"`
+	ExpirationTime int             `json:"expiration_time,omitempty"`
+	Settings       json.RawMessage `json:"settings"`
 }
 
-func AuthenticateUser(username, password string) bool {
-	return auth.AuthenticateUser(username, password)
+var authConfig AuthConfig
+
+func InitializeAuth(data json.RawMessage) error {
+
+	err := json.Unmarshal(data, &authConfig)
+	if err != nil {
+		return err
+	}
+
+	if authConfig.Provider == "" {
+		return errors.New("auth provider is required")
+	}
+
+	if len(authConfig.SecretKey) == 0 {
+		return errors.New("secret key is required")
+	}
+
+	if authConfig.ExpirationTime == 0 {
+		authConfig.ExpirationTime = 24
+	}
+
+	return authproviders.InitializeAuthProvider(authConfig.Provider, authConfig.Settings)
+}
+
+func CheckCredentials(username, password string) bool {
+	return authproviders.AuthenticateUser(username, password)
 }
 
 func AddUser(username, password string) error {
-	return auth.AddUser(username, password)
+	return authproviders.AddUser(username, password)
 }
 
 func RemoveUser(username string) error {
-	return auth.RemoveUser(username)
+	return authproviders.RemoveUser(username)
 }
 
 func GetUsers() ([]string, error) {
-	return auth.GetUsers()
+	return authproviders.GetUsers()
 }
 
 func ChangePassword(username, password string) error {
-	return auth.ChangePassword(username, password)
+	return authproviders.ChangePassword(username, password)
 }
 
 func DropUsers() error {
-	return auth.DropUsers()
+	return authproviders.DropUsers()
 }

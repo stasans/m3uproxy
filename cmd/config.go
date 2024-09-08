@@ -31,10 +31,7 @@ type Config struct {
 	Port         int             `json:"port"`
 	LogFile      string          `json:"log_file,omitempty"`
 	StreamServer json.RawMessage `json:"stream_server"`
-	Auth         struct {
-		Provider string          `json:"provider"`
-		Settings json.RawMessage `json:"settings"`
-	} `json:"auth"`
+	Auth         json.RawMessage `json:"auth"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -56,6 +53,10 @@ func LoadConfig() (*Config, error) {
 	err = json.NewDecoder(file).Decode(&config)
 	if err != nil {
 		return nil, err
+	}
+
+	if config.Port == 0 {
+		config.Port = 8080
 	}
 
 	return &config, nil
