@@ -41,19 +41,25 @@ type entryOverride struct {
 	HttpProxy string            `json:"http_proxy,omitempty"`
 }
 
-type playlistConfig struct {
-	Providers         map[string]json.RawMessage `json:"providers"`
-	ProvidersPriority []string                   `json:"providers_priority"`
-	ChannelOrder      []string                   `json:"channel_order"`
-	Overrides         []entryOverride            `json:"overrides"`
+type providerConfig struct {
+	Provider string          `json:"provider"`
+	Config   json.RawMessage `json:"config"`
 }
 
-func NewProvider(name string, config json.RawMessage) types.M3UProvider {
-	switch name {
+type playlistConfig struct {
+	Providers         map[string]providerConfig `json:"providers"`
+	ProvidersPriority []string                  `json:"providers_priority"`
+	ChannelOrder      []string                  `json:"channel_order"`
+	Overrides         []entryOverride           `json:"overrides"`
+}
+
+func NewProvider(config providerConfig) types.M3UProvider {
+
+	switch config.Provider {
 	case "iptv.org":
-		return iptvorg.NewIPTVOrgProvider(config)
+		return iptvorg.NewIPTVOrgProvider(config.Config)
 	case "file":
-		return file.NewM3UFileProvider(config)
+		return file.NewM3UFileProvider(config.Config)
 	default:
 		return nil
 	}
@@ -88,7 +94,7 @@ func LoadPlaylist(path string) (*m3uparser.M3UPlaylist, error) {
 	playlists := make(map[string]*m3uparser.M3UPlaylist)
 	for _, providerName := range providersPriority {
 
-		provider := NewProvider(providerName, config.Providers[providerName])
+		provider := NewProvider(config.Providers[providerName])
 		if provider == nil {
 			return nil, errors.New("provider not available '" + providerName + "'")
 		}
