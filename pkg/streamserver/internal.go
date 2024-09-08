@@ -35,7 +35,7 @@ import (
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 )
 
-func monitorWorker(stream <-chan int, stop <-chan bool, wg *sync.WaitGroup) {
+func monitorWorker(stream <-chan int, stop <-chan bool, wg *sync.WaitGroup, timeout int) {
 
 	defer wg.Done()
 	for s := range stream {
@@ -43,7 +43,7 @@ func monitorWorker(stream <-chan int, stop <-chan bool, wg *sync.WaitGroup) {
 		case <-stop:
 			return
 		default:
-			streams[s].HealthCheck(defaultTimeout)
+			streams[s].HealthCheck(timeout)
 			if !streams[s].active {
 				log.Printf("Stream '%s' is offline.\n", streams[s].m3u.Title)
 			}
@@ -53,8 +53,6 @@ func monitorWorker(stream <-chan int, stop <-chan bool, wg *sync.WaitGroup) {
 
 func loadAndParsePlaylist(path string) error {
 
-	// If extension is .m3u, load as a m3u file
-	// Otherwise, load as a json file
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		log.Printf("File %s not found\n", path)
 		return nil

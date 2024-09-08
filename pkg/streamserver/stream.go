@@ -74,40 +74,11 @@ func (stream *Stream) HttpRequest(opts StreamRequestOptions) (*http.Request, err
 		return nil, err
 	}
 
-	headers := stream.HttpHeaders()
-	for key := range headers {
-		req.Header.Add(key, headers[key])
+	for key, value := range stream.headers {
+		req.Header.Add(key, value)
 	}
 
 	return req, nil
-}
-
-func (stream *Stream) HttpHeaders() map[string]string {
-
-	if stream.headers == nil {
-		stream.headers = make(map[string]string)
-		m3uproxyTags := stream.m3u.SearchTags("M3UPROXYHEADER")
-		for _, tag := range m3uproxyTags {
-			parts := strings.Split(tag.Value, "=")
-			if len(parts) == 2 {
-				stream.headers[parts[0]] = parts[1]
-			}
-		}
-		vlcTags := stream.m3u.SearchTags("EXTVLCOPT")
-		for _, tag := range vlcTags {
-			parts := strings.Split(tag.Value, "=")
-			if len(parts) == 2 {
-				switch parts[0] {
-				case "http-user-agent":
-					stream.headers["User-Agent"] = parts[1]
-				case "http-referrer":
-					stream.headers["Referer"] = parts[1]
-				default:
-				}
-			}
-		}
-	}
-	return stream.headers
 }
 
 func (stream *Stream) HealthCheck(timeout int) {
@@ -198,7 +169,7 @@ func (stream *Stream) HealthCheck(timeout int) {
 	stream.active = true
 }
 
-func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) error {
+func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
 
 	vars := mux.Vars(r)
 	path := vars["path"]
@@ -221,7 +192,7 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	client := &http.Client{
-		Timeout:   time.Duration(defaultTimeout) * time.Second,
+		Timeout:   time.Duration(timeout) * time.Second,
 		Transport: transport,
 	}
 

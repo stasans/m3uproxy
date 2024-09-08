@@ -88,6 +88,47 @@ func (entry *M3UEntry) SearchTags(tag string) []M3UTag {
 	return result
 }
 
+func (entry *M3UEntry) RemoveTags(tag string) {
+
+	// first pass to count the number of tags to remove
+	count := 0
+	for _, t := range entry.Tags {
+		if t.Tag == tag {
+			count++
+		}
+	}
+
+	// second pass to remove the tags
+	for i := 0; i < count; i++ {
+		for i, t := range entry.Tags {
+			if t.Tag == tag {
+				if i == len(entry.Tags)-1 {
+					entry.Tags = entry.Tags[:i]
+				} else if i == 0 {
+					entry.Tags = entry.Tags[1:]
+				} else {
+					entry.Tags = append(entry.Tags[:i], entry.Tags[i+1:]...)
+					break
+				}
+			}
+		}
+	}
+}
+
+func (entry *M3UEntry) AddTag(tag string, value string) {
+	entry.Tags = append(entry.Tags, M3UTag{tag, value})
+}
+
+func (entry *M3UEntry) ClearTags() {
+	tags := M3UTags{}
+	for _, tag := range entry.Tags {
+		if tag.Tag == "EXTINF" {
+			tags = append(tags, tag)
+		}
+	}
+	entry.Tags = tags
+}
+
 func (entries M3UEntries) SearchByTvgTag(tag string, value string) *M3UEntry {
 	for _, entry := range entries {
 		if entry.TVGTags.GetValue(tag) == value {
