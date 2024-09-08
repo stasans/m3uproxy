@@ -55,7 +55,7 @@ var (
 	stopServer   = make(chan bool)
 
 	noServiceStream *ffmpeg.HLSStream
-	config          StreamServerConfig
+	serverConfig    StreamServerConfig
 	updateTimer     *time.Timer
 )
 
@@ -131,15 +131,12 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 		}
 
 		m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
-		kodiHeaders := config.KodiSupport
+		forceKodiHeaders := false
 		for _, tag := range m3uproxyTags {
-			parts := strings.Split(tag.Value, "=")
-			if len(parts) == 2 {
-				switch parts[0] {
-				case "kodi":
-					kodiHeaders = parts[1] == "true"
-				default:
-				}
+			switch tag.Value {
+			case "forcekodiheaders":
+				forceKodiHeaders = true
+			default:
 			}
 		}
 
@@ -147,15 +144,15 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 		entry.ClearTags()
 
 		stream := Stream{
-			index:       i,
-			m3u:         entry,
-			prefix:      prefix,
-			active:      false,
-			playlist:    nil,
-			headers:     headers,
-			httpProxy:   proxy,
-			kodiHeaders: kodiHeaders,
-			mux:         &sync.Mutex{},
+			index:            i,
+			m3u:              entry,
+			prefix:           prefix,
+			active:           false,
+			hlsPlaylist:      nil,
+			headers:          headers,
+			httpProxy:        proxy,
+			forceKodiHeaders: forceKodiHeaders,
+			mux:              &sync.Mutex{},
 		}
 		streams = append(streams, stream)
 	}
@@ -181,9 +178,9 @@ func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
 	var streamsChan = make(chan int)
 
 	stopWorkers := make(chan bool)
-	for i := 0; i < config.NumWorkers; i++ {
+	for i := 0; i < serverConfig.NumWorkers; i++ {
 		wg.Add(1)
-		go monitorWorker(streamsChan, stopWorkers, &wg, config.DefaultTimeout)
+		go monitorWorker(streamsChan, stopWorkers, &wg, serverConfig.DefaultTimeout)
 	}
 
 	go func() {
@@ -206,25 +203,25 @@ func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
 
 func Start(data json.RawMessage) {
 
-	err := json.Unmarshal(data, &config)
+	err := json.Unmarshal(data, &serverConfig)
 	if err != nil {
 		log.Printf("Failed to parse stream server configuration: %s\n", err)
 		return
 	}
 
 	log.Printf("Starting stream server\n")
-	log.Printf("Playlist: %s\n", config.Playlist)
-	log.Printf("No Service: %s\n", config.NoServiceImage)
+	log.Printf("Playlist: %s\n", serverConfig.Playlist)
+	log.Printf("No Service: %s\n", serverConfig.NoServiceImage)
 
-	if config.DefaultTimeout < 1 {
-		config.DefaultTimeout = 3
+	if serverConfig.DefaultTimeout < 1 {
+		serverConfig.DefaultTimeout = 3
 	}
-	if config.NumWorkers < 1 {
-		config.NumWorkers = 10
+	if serverConfig.NumWorkers < 1 {
+		serverConfig.NumWorkers = 10
 	}
 
-	if config.ScanTime == 0 {
-		config.ScanTime = 24 * 60 * 60
+	if serverConfig.ScanTime == 0 {
+		serverConfig.ScanTime = 24 * 60 * 60
 	}
 
 	// Initialize FFmpeg
@@ -234,7 +231,7 @@ func Start(data json.RawMessage) {
 
 	// Start the no service stream
 	log.Printf("Generating HLS for no service image\n")
-	noServiceStream = ffmpeg.GenerateImageHLS(config.NoServiceImage, "no_service")
+	noServiceStream = ffmpeg.GenerateImageHLS(serverConfig.NoServiceImage, "no_service")
 
 	if err := noServiceStream.Start(); err != nil {
 		log.Fatalf("Failed to start no service stream: %v\n", err)
@@ -242,9 +239,9 @@ func Start(data json.RawMessage) {
 	}
 
 	quit := make(chan bool)
-	updateTimer = time.NewTimer(time.Duration(config.ScanTime) * time.Second)
+	updateTimer = time.NewTimer(time.Duration(serverConfig.ScanTime) * time.Second)
 	go func() {
-		updatePlaylistAndMonitor(config, stopServer, quit)
+		updatePlaylistAndMonitor(serverConfig, stopServer, quit)
 		for {
 			select {
 			case <-quit:
@@ -254,7 +251,7 @@ func Start(data json.RawMessage) {
 				log.Println("Stopping stream server")
 				return
 			case <-updateTimer.C:
-				updatePlaylistAndMonitor(config, stopServer, quit)
+				updatePlaylistAndMonitor(serverConfig, stopServer, quit)
 			}
 		}
 	}()
@@ -296,7 +293,7 @@ func HandleStreamRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streams[streamID].Serve(w, r, config.DefaultTimeout); err != nil {
+	if err := streams[streamID].Serve(w, r, serverConfig.DefaultTimeout); err != nil {
 		log.Printf("Error serving stream stream: %v\n", err)
 		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
 		return
@@ -348,7 +345,7 @@ func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("#EXTM3U\n"))
 	for i, stream := range streams {
-		if config.HideInactive && !stream.active {
+		if serverConfig.HideInactive && !stream.active {
 			continue
 		}
 		entry := m3uparser.M3UEntry{
@@ -357,7 +354,7 @@ func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}
 		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
-		if stream.kodiHeaders && stream.playlist != nil {
+		if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.hlsPlaylist != nil) {
 			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
 			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
 		}

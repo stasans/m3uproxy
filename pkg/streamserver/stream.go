@@ -38,15 +38,15 @@ import (
 )
 
 type Stream struct {
-	index       int
-	m3u         m3uparser.M3UEntry
-	prefix      string
-	active      bool
-	playlist    *m3u8.MasterPlaylist
-	mux         *sync.Mutex
-	headers     map[string]string
-	httpProxy   string
-	kodiHeaders bool
+	index            int
+	m3u              m3uparser.M3UEntry
+	prefix           string
+	active           bool
+	hlsPlaylist      *m3u8.MasterPlaylist
+	mux              *sync.Mutex
+	headers          map[string]string
+	httpProxy        string
+	forceKodiHeaders bool
 }
 
 type StreamRequestOptions struct {
@@ -103,7 +103,7 @@ func (stream *Stream) HealthCheck(timeout int) {
 	}
 
 	stream.active = false
-	stream.playlist = nil
+	stream.hlsPlaylist = nil
 
 	req, err := stream.HttpRequest(StreamRequestOptions{
 		Path:   "playlist.m3u8",
@@ -150,7 +150,7 @@ func (stream *Stream) HealthCheck(timeout int) {
 			return
 		}
 		if listType == m3u8.MASTER {
-			stream.playlist = p.(*m3u8.MasterPlaylist)
+			stream.hlsPlaylist = p.(*m3u8.MasterPlaylist)
 		}
 	case "application/x-mpegurl":
 		fallthrough
@@ -200,10 +200,10 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 	opts := StreamRequestOptions{}
 
 	if path == "playlist.m3u8" {
-		if stream.playlist != nil {
+		if stream.hlsPlaylist != nil {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(stream.playlist.String()))
+			w.Write([]byte(stream.hlsPlaylist.String()))
 			stream.mux.Unlock()
 			return nil
 		}

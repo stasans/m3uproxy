@@ -34,12 +34,12 @@ import (
 )
 
 type OverrideEntry struct {
-	Channel       string            `json:"channel"`
-	URL           string            `json:"url,omitempty"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	Disabled      bool              `json:"disabled,omitempty"`
-	HttpProxy     string            `json:"http_proxy,omitempty"`
-	NoKodiHeaders bool              `json:"kodi,omitempty"`
+	Channel          string            `json:"channel"`
+	URL              string            `json:"url,omitempty"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	Disabled         bool              `json:"disabled,omitempty"`
+	HttpProxy        string            `json:"http_proxy,omitempty"`
+	ForceKodiHeaders bool              `json:"kodi,omitempty"`
 }
 
 type ProviderConfig struct {
@@ -127,10 +127,10 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 					Value: "proxy=" + override.HttpProxy,
 				})
 			}
-			if ok && override.NoKodiHeaders {
+			if ok && override.ForceKodiHeaders {
 				entry.Tags = append(entry.Tags, m3uparser.M3UTag{
 					Tag:   "M3UPROXYOPT",
-					Value: "kodi=false",
+					Value: "forcekodiheaders",
 				})
 			}
 			masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
