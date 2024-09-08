@@ -34,11 +34,12 @@ import (
 )
 
 type OverrideEntry struct {
-	Channel   string            `json:"channel"`
-	URL       string            `json:"url,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Disabled  bool              `json:"disabled,omitempty"`
-	HttpProxy string            `json:"http_proxy,omitempty"`
+	Channel       string            `json:"channel"`
+	URL           string            `json:"url,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Disabled      bool              `json:"disabled,omitempty"`
+	HttpProxy     string            `json:"http_proxy,omitempty"`
+	NoKodiHeaders bool              `json:"kodi,omitempty"`
 }
 
 type ProviderConfig struct {
@@ -50,7 +51,7 @@ type PlaylistConfig struct {
 	Providers         map[string]ProviderConfig `json:"providers"`
 	ProvidersPriority []string                  `json:"providers_priority"`
 	ChannelOrder      []string                  `json:"channel_order"`
-	Overrides         []OverrideEntry           `json:"overrides"`
+	Overrides         map[string]OverrideEntry  `json:"overrides"`
 }
 
 func NewProvider(config ProviderConfig) types.M3UProvider {
@@ -79,7 +80,12 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 		}
 	}
 
-	playlists := make(map[string]*m3uparser.M3UPlaylist)
+	masterPlaylist := m3uparser.M3UPlaylist{
+		Version: 3,
+		Entries: make(m3uparser.M3UEntries, 0),
+		Tags:    make(m3uparser.M3UTags, 0),
+	}
+
 	for _, providerName := range providersPriority {
 
 		provider := NewProvider(config.Providers[providerName])
@@ -88,19 +94,7 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 		}
 
 		log.Printf("Provider: %s\n", providerName)
-		playlists[providerName] = provider.GetPlaylist()
-	}
-
-	log.Printf("%d playlists loaded", len(playlists))
-	log.Println("Merging playlists according to the priority defined, duplicates will be skipped.")
-
-	masterPlaylist := m3uparser.M3UPlaylist{
-		Version: 3,
-		Entries: make(m3uparser.M3UEntries, 0),
-		Tags:    make(m3uparser.M3UTags, 0),
-	}
-
-	for _, playlist := range playlists {
+		playlist := provider.GetPlaylist()
 		for _, entry := range playlist.Entries {
 			tvgId := entry.TVGTags.GetValue("tvg-id")
 			if tvgId == "" {
@@ -111,29 +105,15 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 				log.Printf("Duplicate entry: '%s', skipping.", entry.Title)
 				continue
 			}
-			masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
-		}
-	}
-
-	if len(config.Overrides) > 0 {
-		log.Println("Applying overrides.")
-		for _, override := range config.Overrides {
-			index := masterPlaylist.SearchEntryIndexByTvgTag("tvg-id", override.Channel)
-			if index == -1 {
-				log.Printf("Channel '%s' not found, skipping override.", override.Channel)
+			override, ok := config.Overrides[tvgId]
+			if ok && override.Disabled {
+				log.Printf("Channel '%s' is disabled, skipping.", entry.Title)
 				continue
 			}
-
-			entry := masterPlaylist.Entries[index]
-			log.Printf("Applying override for channel '%s'.", entry.Title)
-			if override.Disabled {
-				masterPlaylist.RemoveEntryByTvgTag("tvg-id", override.Channel)
-				continue
-			}
-			if override.URL != "" {
+			if ok && override.URL != "" {
 				entry.URI = override.URL
 			}
-			if len(override.Headers) > 0 {
+			if ok && len(override.Headers) > 0 {
 				for k, v := range override.Headers {
 					entry.Tags = append(entry.Tags, m3uparser.M3UTag{
 						Tag:   "M3UPROXYHEADER",
@@ -141,14 +121,21 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 					})
 				}
 			}
-			if override.HttpProxy != "" {
+			if ok && override.HttpProxy != "" {
 				entry.Tags = append(entry.Tags, m3uparser.M3UTag{
 					Tag:   "M3UPROXYTRANSPORT",
 					Value: "proxy=" + override.HttpProxy,
 				})
 			}
-			masterPlaylist.Entries[index] = entry
+			if ok && override.NoKodiHeaders {
+				entry.Tags = append(entry.Tags, m3uparser.M3UTag{
+					Tag:   "M3UPROXYOPT",
+					Value: "kodi=false",
+				})
+			}
+			masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
 		}
+
 	}
 
 	if len(config.ChannelOrder) > 0 {

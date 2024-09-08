@@ -130,18 +130,32 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			}
 		}
 
+		m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
+		kodiHeaders := config.KodiSupport
+		for _, tag := range m3uproxyTags {
+			parts := strings.Split(tag.Value, "=")
+			if len(parts) == 2 {
+				switch parts[0] {
+				case "kodi":
+					kodiHeaders = parts[1] == "true"
+				default:
+				}
+			}
+		}
+
 		// Clear non-standard tags
 		entry.ClearTags()
 
 		stream := Stream{
-			index:     i,
-			m3u:       entry,
-			prefix:    prefix,
-			active:    false,
-			playlist:  nil,
-			headers:   headers,
-			httpProxy: proxy,
-			mux:       &sync.Mutex{},
+			index:       i,
+			m3u:         entry,
+			prefix:      prefix,
+			active:      false,
+			playlist:    nil,
+			headers:     headers,
+			httpProxy:   proxy,
+			kodiHeaders: kodiHeaders,
+			mux:         &sync.Mutex{},
 		}
 		streams = append(streams, stream)
 	}
@@ -343,7 +357,7 @@ func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}
 		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
-		if config.KodiSupport && stream.playlist != nil {
+		if stream.kodiHeaders && stream.playlist != nil {
 			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
 			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
 		}

@@ -38,14 +38,15 @@ import (
 )
 
 type Stream struct {
-	index     int
-	m3u       m3uparser.M3UEntry
-	prefix    string
-	active    bool
-	playlist  *m3u8.MasterPlaylist
-	mux       *sync.Mutex
-	headers   map[string]string
-	httpProxy string
+	index       int
+	m3u         m3uparser.M3UEntry
+	prefix      string
+	active      bool
+	playlist    *m3u8.MasterPlaylist
+	mux         *sync.Mutex
+	headers     map[string]string
+	httpProxy   string
+	kodiHeaders bool
 }
 
 type StreamRequestOptions struct {
