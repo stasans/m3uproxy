@@ -78,7 +78,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 		tvgId := entry.TVGTags.GetValue("tvg-id")
 		radio := entry.TVGTags.GetValue("radio")
 		if tvgId == "" && radio == "" {
-			log.Printf("Missing tvg-id or radio tag for stream %s\n", entry.URI)
+			log.Printf("Missing tvg-id for stream %s\n", entry.URI)
 			continue
 		}
 
@@ -152,6 +152,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			headers:          headers,
 			httpProxy:        proxy,
 			forceKodiHeaders: forceKodiHeaders,
+			radio:            radio == "true",
 			mux:              &sync.Mutex{},
 		}
 		streams = append(streams, stream)
@@ -354,9 +355,11 @@ func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}
 		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
-		if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.hlsPlaylist != nil) {
-			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
-			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
+		if !stream.radio {
+			if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.hlsPlaylist != nil) {
+				entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
+				entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
+			}
 		}
 		w.Write([]byte(entry.String() + "\n"))
 	}

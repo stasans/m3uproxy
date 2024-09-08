@@ -47,6 +47,7 @@ type Stream struct {
 	headers          map[string]string
 	httpProxy        string
 	forceKodiHeaders bool
+	radio            bool
 }
 
 type StreamRequestOptions struct {
