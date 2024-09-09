@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Streaming App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.8.1/font/bootstrap-icons.min.css">
+    <style>
+        body {
+            background-color: #171d22;
+            color: #fff;
+        }
+
+        #playlist {
+            background-color: #32414f;
+            padding: 15px;
+            max-height: 100vh;
+            overflow-y: auto;
+        }
+
+        #videoPlayer {
+            background-color: #000000;
+            width: 100%;
+            height: auto;
+        }
+
+        .channel:hover {
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            transition: box-shadow 0.3s ease-in-out;
+        }
+
+        .channel:hover {
+            cursor: pointer;
+        }
+
+        .channel {
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+        .tv-title {
+            font-size: 1.2rem;
+        }
+
+        .tv-logo {
+            width: 100px;
+        }
+
+        .search-bar {
+            margin-bottom: 10px;
+        }
+
+        #open-popup i {
+            font-size: 24px;
+        }
+
+        #update-list i {
+            font-size: 24px;
+        }
+
+        .menu {
+            padding: 10px;
+        }
+
+        .modal-content {
+            background-color: #212c37;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container-fluid">
+        <div class="row d-flex justify-content-center">
+            <div class="col-md-2 d-none" id="playlist">
+                <input type="text" id="search-input" class="form-control search-bar" placeholder="Search Channel">
+                <!-- Playlist items will be added here -->
+            </div>
+            <div class="col-md-10">
+                <!-- Fill so the buttons are aligned to the right -->
+                <div class="d-flex justify-content-end menu">
+                    <div class="input-group-btn">
+                        <button id="update-list" class="btn btn-primary">
+                            <i class="bi bi-arrow-right-circle-fill"></i>
+                        </button>
+                        <button id="open-popup" class="btn btn-primary">
+                            <i class="bi bi-gear-fill"></i>
+                        </button>
+                    </div>
+                </div>
+                <video id="videoPlayer" controls autoplay></video>
+
+                <!-- Popup Modal -->
+                <div id="config-popup" class="modal fade" tabindex="-1" aria-labelledby="configPopupLabel"
+                    aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="configPopupLabel">Configuration</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="config-form">
+                                    <div class="mb-3">
+                                        <label for="username" class="form-label">Username</label>
+                                        <input type="text" class="form-control" id="username"
+                                            placeholder="Enter username">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="password" class="form-label">Password</label>
+                                        <input type="password" class="form-control" id="password"
+                                            placeholder="Enter password">
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                <button type="button" id="save-btn" class="btn btn-primary">Save</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous">
+        </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.11.0/shaka-player.compiled.js"></script>
+
+    <script>
+        $(document).ready(function () {
+            let playlistItems = [];
+            let player = null;
+
+            // Get DOM elements
+            const videoPlayer = $('#videoPlayer');
+            const playlist = $('#playlist');
+            const updatelistButton = $('#update-list');
+            const searchInput = $('#search-input');
+            const configPopup = $('#config-popup');
+            const usernameInput = $('#username');
+            const passwordInput = $('#password');
+
+
+            // Load saved playlist URL from localStorage
+            const savedUsername = localStorage.getItem('username');
+            const savedPassword = localStorage.getItem('password');
+            if (savedUsername && savedPassword) {
+                setTimeout(() => updatelistButton.trigger('click'), 500);
+            } else {
+                setTimeout(() => configPopup.modal('show'), 500);
+            }
+
+            // Open configuration modal
+            $('#open-popup').on('click', function () {
+                usernameInput.val(localStorage.getItem('username'));
+                passwordInput.val(localStorage.getItem('password'));
+                configPopup.modal('show');
+            });
+
+            // Save configuration data to localStorage
+            $('#save-btn').on('click', function () {
+                const username = usernameInput.val();
+                const password = passwordInput.val();
+
+                if (username && password) {
+                    localStorage.setItem('username', username);
+                    localStorage.setItem('password', password);
+                    configPopup.modal('hide');
+                } else {
+                    alert('Please enter both username and password.');
+                }
+            });
+
+            // Load M3U playlist
+            updatelistButton.on('click', function () {
+                // Fetch the M3U file and process it
+                const username = localStorage.getItem('username');
+                const password = localStorage.getItem('password');
+                console.log(username, password);
+                const headers = {};
+                headers['Authorization'] = 'Basic ' + btoa(username + ':' + password);
+
+                fetch("/streams.m3u", {
+                    method: 'GET',
+                    headers: headers
+                })
+                    .then(response => response.text())
+                    .then(data => {
+                        playlistItems = [];
+                        data = trimLineBreak(data);
+                        const lines = data.split('\n');
+                        let item = null;
+
+                        lines.forEach((line, j) => {
+                            line = line.trim();
+                            if (line.startsWith("#EXTINF:")) {
+                                if (item !== null) {
+                                    playlistItems.push(item);
+                                }
+                                item = { tvgName: '', tvgLogo: '', source: '' };
+                                const tvgNameMatch = line.match(/tvg-name="([^"]+)"/);
+                                item.tvgName = tvgNameMatch ? tvgNameMatch[1] : `Stream ${j + 1}`;
+                                const tvgLogoMatch = line.match(/tvg-logo="([^"]+)"/);
+                                item.tvgLogo = tvgLogoMatch ? tvgLogoMatch[1] : '';
+                            }
+                            if (line.length > 0 && !line.startsWith("#")) {
+                                item.source = line;
+                            }
+                        });
+
+                        renderPlaylist(playlistItems);
+
+                        // Show/hide playlist based on content
+                        playlist.toggleClass("d-none", $('.channel').length === 0);
+                    })
+                    .catch(error => console.error("Error loading M3U:", error));
+            });
+
+            // Search input handler
+            searchInput.on('input', function () {
+                const searchText = $(this).val().trim().toLowerCase();
+                const filteredItems = playlistItems.filter(item => item.tvgName.toLowerCase().includes(searchText));
+                renderPlaylist(filteredItems);
+            });
+
+            // Render playlist items
+            function renderPlaylist(items) {
+                // Clear existing items except the search bar
+                playlist.children().not('.search-bar').remove();
+
+                items.forEach((item) => {
+                    const playlistItem = $('<div>', { class: 'channel d-flex flex-column p-3' });
+
+                    if (item.tvgLogo) {
+                        // Load the logo image 
+                        loadImage(item.tvgLogo)
+                            .then(img => {
+                                const logoImage = $('<img>', { src: item.tvgLogo, class: 'tv-logo' });
+                                playlistItem.append(logoImage);
+                            })
+                            .catch(error => {
+                                const titleItem = $('<span>', { class: 'tv-title', text: item.tvgName });
+                                playlistItem.append(titleItem);
+                            });
+                    } else {
+                        const titleItem = $('<span>', { class: 'tv-title', text: item.tvgName });
+                        playlistItem.append(titleItem);
+                    }
+
+                    playlistItem.on('click', async function () {
+                        if (player !== null) {
+                            await player.destroy();
+                        }
+                        player = new shaka.Player(videoPlayer[0]);
+                        player.getNetworkingEngine().registerRequestFilter(function (type, request) {
+                            if (type == shaka.net.NetworkingEngine.RequestType.SEGMENT ||
+                                type == shaka.net.NetworkingEngine.RequestType.MANIFEST) {
+                                request.allowCrossSiteCredentials = true;
+                            }
+                        });
+
+                        player.load(item.source).catch(error => console.error('Error loading video:', error));
+                    });
+
+                    playlist.append(playlistItem);
+                });
+            }
+
+            // Utility function to remove line breaks
+            function trimLineBreak(data) {
+                return data.replace(/\n+/g, '\n');
+            }
+
+            function loadImage(url) {
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.onerror = () => reject(new Error(`Failed to load image from URL: ${url}`));
+                    img.src = url;
+                });
+            }
+        });
+    </script>
+</body>
+
+</html>

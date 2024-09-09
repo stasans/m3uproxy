@@ -32,6 +32,7 @@ type Config struct {
 	LogFile      string          `json:"log_file,omitempty"`
 	StreamServer json.RawMessage `json:"stream_server"`
 	Auth         json.RawMessage `json:"auth"`
+	Security     json.RawMessage `json:"security,omitempty"`
 }
 
 func LoadConfig() (*Config, error) {

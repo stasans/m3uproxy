@@ -8,6 +8,13 @@
         "max_workers": 10,
         "hide_inactive": true
     },
+    "security": {
+        "geoip": {
+            "database": "cache/GeoLite2-Country.mmdb",
+            "whitelist": [],
+            "internal_networks": []
+        }
+    },
     "auth": {
         "provider": "file",
         "settings": {

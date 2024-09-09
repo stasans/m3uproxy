@@ -241,9 +241,8 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 		return errors.New("no content")
 	}
 
-	for key := range resp.Header {
-		w.Header().Add(key, resp.Header.Get(key))
-	}
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
 
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)

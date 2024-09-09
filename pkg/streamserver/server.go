@@ -270,13 +270,14 @@ func Shutdown() {
 	log.Printf("Stream server stopped\n")
 }
 
-func SetupHandlers(r *mux.Router) {
-	r.HandleFunc("/"+m3uInternalPath+"/{path:.*}", HandleInternalStream).Methods("GET")
-	r.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", HandleStreamRequest).Methods("GET")
-	r.HandleFunc("/streams.m3u", HandleStreamPlaylist).Methods("GET")
+func StreamServer(next *mux.Router) http.Handler {
+	next.HandleFunc("/"+m3uInternalPath+"/{path:.*}", handleInternalStream).Methods("GET")
+	next.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", handleStreamRequest).Methods("GET")
+	next.HandleFunc("/streams.m3u", handleStreamPlaylist).Methods("GET")
+	return next
 }
 
-func HandleStreamRequest(w http.ResponseWriter, r *http.Request) {
+func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	token := vars["token"]
@@ -301,7 +302,7 @@ func HandleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func HandleInternalStream(w http.ResponseWriter, r *http.Request) {
+func handleInternalStream(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	path := vars["path"]
 	if strings.HasPrefix(path, "no_service") {
@@ -316,7 +317,7 @@ func HandleInternalStream(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func HandleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
+func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 
 	token, ok := getJWTToken(r)
 	if !ok {

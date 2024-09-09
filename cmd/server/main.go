@@ -61,11 +61,19 @@ var serverCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		if configureSecurity(config.Security) != nil {
+			log.Println("Security settings not configured.")
+		}
+
+		if configureGeoIp() != nil {
+			log.Println("GeoIP database not found, geo-location will not be available.")
+		}
+
 		streamserver.Start(config.StreamServer)
 
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", config.Port),
-			Handler: setupHandlers(config),
+			Handler: geoip(routes(config)),
 		}
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)
@@ -85,6 +93,8 @@ var serverCmd = &cobra.Command{
 
 		// Stop the no service stream
 		streamserver.Shutdown()
+
+		cleanGeoIp()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
