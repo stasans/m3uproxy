@@ -1,35 +1,10 @@
 {
     "providers": {
-        "iptv.org": {
-            "categories": [
-                "general",
-                "animation",
-                "business",
-                "comedy",
-                "culture",
-                "documentary",
-                "entertainment",
-                "movies",
-                "music",
-                "news",
-                "outdoor",
-                "relax",
-                "science",
-                "series",
-                "sports",
-                "travel"
-            ],
-            "countries": [
-                "UK",
-                "US"
-            ]
+        "m3upt": {
+            "provider": "file",
+            "config": {
+                "source": "https://m3upt.com/iptv"
+            }
         }
-    },
-    "providers_order": [
-        "iptv.org"
-    ],
-    "channel_order": [],
-    "overrides": [
-        {}
-    ]
+    }
 }

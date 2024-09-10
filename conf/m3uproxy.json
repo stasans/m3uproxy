@@ -6,7 +6,8 @@
         "no_service_image": "assets/no_service_pt.jpg",
         "default_timeout": 3,
         "max_workers": 10,
-        "hide_inactive": true
+        "hide_inactive": true,
+        "secret_key": "secret"
     },
     "security": {
         "geoip": {

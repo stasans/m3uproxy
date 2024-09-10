@@ -34,7 +34,7 @@ import (
 )
 
 type OverrideEntry struct {
-	Channel          string            `json:"channel"`
+	ChannelName      string            `json:"name,omitempty"`
 	URL              string            `json:"url,omitempty"`
 	Headers          map[string]string `json:"headers,omitempty"`
 	Disabled         bool              `json:"disabled,omitempty"`
@@ -49,9 +49,9 @@ type ProviderConfig struct {
 
 type PlaylistConfig struct {
 	Providers         map[string]ProviderConfig `json:"providers"`
-	ProvidersPriority []string                  `json:"providers_priority"`
-	ChannelOrder      []string                  `json:"channel_order"`
-	Overrides         map[string]OverrideEntry  `json:"overrides"`
+	ProvidersPriority []string                  `json:"providers_priority,omitempty"`
+	ChannelOrder      []string                  `json:"channel_order,omitempty"`
+	Overrides         map[string]OverrideEntry  `json:"overrides,omitempty"`
 }
 
 func NewProvider(config ProviderConfig) types.M3UProvider {
@@ -109,6 +109,9 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 			if ok && override.Disabled {
 				log.Printf("Channel '%s' is disabled, skipping.", entry.Title)
 				continue
+			}
+			if ok && override.ChannelName != "" {
+				entry.Title = override.ChannelName
 			}
 			if ok && override.URL != "" {
 				entry.URI = override.URL
