@@ -47,6 +47,7 @@ type StreamServerConfig struct {
 	ScanTime       int    `json:"scan_time,omitempty"`
 	HideInactive   bool   `json:"hide_inactive,omitempty"`
 	KodiSupport    bool   `json:"kodi,omitempty"`
+	UseHttps       bool   `json:"force_https_url,omitempty"`
 }
 
 var (
@@ -349,8 +350,14 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		if serverConfig.HideInactive && !stream.active {
 			continue
 		}
+
+		protocol := "http"
+		if serverConfig.UseHttps && r.TLS == nil {
+			protocol = "https"
+		}
+
 		entry := m3uparser.M3UEntry{
-			URI:   fmt.Sprintf("http://%s/%s/%s/%d/playlist.m3u8", r.Host, m3uProxyPath, token, i),
+			URI:   fmt.Sprintf("%s://%s/%s/%s/%d/playlist.m3u8", protocol, r.Host, m3uProxyPath, token, i),
 			Title: stream.m3u.Title,
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}

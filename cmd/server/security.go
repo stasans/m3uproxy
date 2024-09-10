@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/oschwald/geoip2-golang"
 )
@@ -83,8 +84,23 @@ func geoip(next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
+
+		ip := ""
+		if r.Header.Get("X-Real-IP") != "" {
+			ip = r.Header.Get("X-Real-IP")
+		} else if r.Header.Get("X-Forwarded-For") != "" {
+			ips := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+			ip = ips[0]
+		} else {
+			var err error
+			ip, _, err = net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if ip == "" {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
