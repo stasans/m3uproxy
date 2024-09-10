@@ -54,9 +54,9 @@ func configureGeoIp() error {
 		return err
 	}
 
-	geoipAllowedCountries := make(map[string]bool)
+	geoipWhitelist = make(map[string]bool)
 	for _, country := range securityConfig.GeoIP.Whitelist {
-		geoipAllowedCountries[country] = true
+		geoipWhitelist[country] = true
 	}
 
 	geoIPCidrWhitelist = make([]*net.IPNet, 0)
@@ -115,18 +115,15 @@ func geoip(next http.Handler) http.Handler {
 			}
 		}
 
-		log.Printf("IP: %s\n", ip)
-
 		record, err := geoipDb.Country(parsedIP)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		log.Printf("Country: %s\n", record.Country.IsoCode)
-
 		countryCode := record.Country.IsoCode
 		if _, ok := geoipWhitelist[countryCode]; !ok {
+			log.Printf("Access Denied: %s, Country: %s\n", ip, countryCode)
 			http.Error(w, "Access Denied", http.StatusForbidden)
 			return
 		}
