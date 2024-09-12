@@ -282,8 +282,9 @@
 
                         player.load(item.source).catch((error) => {
                             console.error('Error loading stream:', error);
+                            player.unload();
                             player.destroy();
-                            channelTitle.text('Channel' + item.tvgName + 'not available');
+                            channelTitle.text('Channel ' + item.tvgName + ' not available');
                         });
                     });
 

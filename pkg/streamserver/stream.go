@@ -22,12 +22,10 @@ THE SOFTWARE.
 package streamserver
 
 import (
-	"bufio"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -58,17 +56,24 @@ type StreamRequestOptions struct {
 
 func (stream *Stream) HttpRequest(opts StreamRequestOptions) (*http.Request, error) {
 
-	streamURL, _ := url.Parse(stream.m3u.URI)
+	path, _ := url.Parse(opts.Path)
+	streamURL := &url.URL{}
+	if path.Scheme == "" {
 
-	if opts.Path != "playlist.m3u8" {
-		if stream.prefix != "" {
-			streamURL.Path = stream.prefix + "/" + opts.Path
-		} else {
-			streamURL.Path = opts.Path
+		streamURL, _ = url.Parse(stream.m3u.URI)
+
+		if opts.Path != m3uPlaylist {
+			if stream.prefix != "" {
+				streamURL.Path = stream.prefix + "/" + opts.Path
+			} else {
+				streamURL.Path = opts.Path
+			}
+			if opts.Query != "" {
+				streamURL.RawQuery = opts.Query
+			}
 		}
-		if opts.Query != "" {
-			streamURL.RawQuery = opts.Query
-		}
+	} else {
+		streamURL = path
 	}
 
 	req, err := http.NewRequest(opts.Method, streamURL.String(), nil)
@@ -105,70 +110,7 @@ func (stream *Stream) HealthCheck(timeout int) {
 
 	stream.active = false
 	stream.hlsPlaylist = nil
-
-	req, err := stream.HttpRequest(StreamRequestOptions{
-		Path:   "playlist.m3u8",
-		Method: "GET",
-	})
-
-	if err != nil {
-		return
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return
-	}
-
-	defer resp.Body.Close()
-
-	status := resp.StatusCode / 100
-	if status != 2 {
-		return
-	}
-
-	// Check if the URL has changed (redirects) and update the stream URL
-	if resp.Request.URL.String() != stream.m3u.URI {
-
-		stream.m3u.URI = resp.Request.URL.String()
-		if strings.LastIndex(resp.Request.URL.Path, "/") != -1 {
-			stream.prefix = resp.Request.URL.Path[:strings.LastIndex(resp.Request.URL.Path, "/")]
-		} else {
-			stream.prefix = ""
-		}
-	}
-
-	contentType := resp.Header.Get("Content-Type")
-	parts := strings.Split(contentType, ";")
-	if len(parts) > 1 {
-		contentType = strings.TrimRight(parts[0], " ")
-	}
-	switch strings.ToLower(contentType) {
-	case "application/vnd.apple.mpegurl":
-		// Check if the stream is a valid m3u8 playlist
-		p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
-		if err != nil {
-			return
-		}
-		if listType == m3u8.MASTER {
-			stream.hlsPlaylist = p.(*m3u8.MasterPlaylist)
-		}
-	case "application/x-mpegurl":
-		fallthrough
-	case "audio/x-mpegurl":
-		fallthrough
-	case "audio/mpeg":
-		fallthrough
-	case "audio/aacp":
-		fallthrough
-	case "audio/aac":
-		fallthrough
-	case "binary/octet-stream":
-	default:
-		return
-	}
-
-	stream.active = true
+	stream.active = checkStream(m3uPlaylist, stream, client)
 }
 
 func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
@@ -200,7 +142,7 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 
 	opts := StreamRequestOptions{}
 
-	if path == "playlist.m3u8" {
+	if path == m3uPlaylist {
 		if stream.hlsPlaylist != nil {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.WriteHeader(http.StatusOK)
@@ -208,7 +150,7 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 			stream.mux.Unlock()
 			return nil
 		}
-		opts.Path = "playlist.m3u8"
+		opts.Path = m3uPlaylist
 		opts.Method = "GET"
 	} else {
 		opts.Path = path
@@ -227,14 +169,14 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 	resp, err := client.Do(req)
 
 	if err != nil {
-		return errors.New("failed to fetch stream")
+		return err
 	}
 
 	defer resp.Body.Close()
 
 	code := resp.StatusCode / 100
 	if code != 2 {
-		return errors.New("failed to fetch stream")
+		return errors.New("invalid server status code")
 	}
 
 	if resp.StatusCode == http.StatusNoContent {

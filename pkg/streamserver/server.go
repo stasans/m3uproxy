@@ -62,6 +62,7 @@ var (
 
 const m3uInternalPath = "m3uproxy/streams"
 const m3uProxyPath = "m3uproxy/proxy"
+const m3uPlaylist = "m3uproxy.m3u8"
 
 func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 
@@ -203,6 +204,15 @@ func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
 	wg.Wait()
 }
 
+func MonitorStreamsNoWorkers() {
+	for i := 0; i < len(streams); i++ {
+		streams[i].HealthCheck(serverConfig.DefaultTimeout)
+		if !streams[i].active {
+			log.Printf("Stream '%s' is offline.\n", streams[i].m3u.Title)
+		}
+	}
+}
+
 func Start(data json.RawMessage) {
 
 	err := json.Unmarshal(data, &serverConfig)
@@ -219,7 +229,7 @@ func Start(data json.RawMessage) {
 		serverConfig.DefaultTimeout = 3
 	}
 	if serverConfig.NumWorkers < 1 {
-		serverConfig.NumWorkers = 10
+		serverConfig.NumWorkers = 1
 	}
 
 	if serverConfig.ScanTime == 0 {
@@ -254,6 +264,7 @@ func Start(data json.RawMessage) {
 				return
 			case <-updateTimer.C:
 				updatePlaylistAndMonitor(serverConfig, stopServer, quit)
+				updateTimer.Reset(time.Duration(serverConfig.ScanTime) * time.Second)
 			}
 		}
 	}()
@@ -286,7 +297,7 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	ok := auth.VerifyToken(token)
 	if !ok {
 		http.Error(w, "Invalid token", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream stream %s: missing token\n", r.URL.Path)
+		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
 		return
 	}
 
@@ -357,7 +368,7 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		}
 
 		entry := m3uparser.M3UEntry{
-			URI:   fmt.Sprintf("%s://%s/%s/%s/%d/playlist.m3u8", protocol, r.Host, m3uProxyPath, token, i),
+			URI:   fmt.Sprintf("%s://%s/%s/%s/%d/%s", protocol, r.Host, m3uProxyPath, token, i, m3uPlaylist),
 			Title: stream.m3u.Title,
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}

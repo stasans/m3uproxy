@@ -22,6 +22,7 @@ THE SOFTWARE.
 package streamserver
 
 import (
+	"bufio"
 	"encoding/base64"
 	"errors"
 	"log"
@@ -33,6 +34,7 @@ import (
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
+	"github.com/grafov/m3u8"
 )
 
 func monitorWorker(stream <-chan int, stop <-chan bool, wg *sync.WaitGroup, timeout int) {
@@ -132,7 +134,110 @@ func updatePlaylistAndMonitor(config StreamServerConfig, stopServer chan bool, q
 		log.Printf("Failed to load streams: %v\n", err)
 	}
 	log.Println("Checking streams availability, this may take a while")
-	MonitorStreams(stopServer, quit)
+	if config.NumWorkers == 1 {
+		MonitorStreamsNoWorkers()
+	} else {
+		MonitorStreams(stopServer, quit)
+	}
 	log.Println("Streams loading completed")
 
+}
+
+func checkStream(path string, stream *Stream, client *http.Client) bool {
+
+	req, err := stream.HttpRequest(StreamRequestOptions{
+		Path:   path,
+		Method: "GET",
+	})
+	if err != nil {
+		return false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	parts := strings.Split(contentType, ";")
+	if len(parts) > 1 {
+		contentType = strings.TrimRight(parts[0], " ")
+	}
+	contentType = strings.ToLower(contentType)
+	switch contentType {
+	case "application/vnd.apple.mpegurl":
+
+		p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+		if err != nil {
+			log.Printf("Failed to decode m3u8 playlist: %v\n", err)
+			return false
+		}
+		resp.Body.Close()
+
+		switch listType {
+		case m3u8.MASTER:
+			if resp.Request.URL.String() != stream.m3u.URI {
+
+				stream.m3u.URI = resp.Request.URL.String()
+				if strings.LastIndex(resp.Request.URL.Path, "/") != -1 {
+					stream.prefix = resp.Request.URL.Path[:strings.LastIndex(resp.Request.URL.Path, "/")]
+				} else {
+					stream.prefix = ""
+				}
+			}
+
+			playlist := p.(*m3u8.MasterPlaylist)
+			if playlist == nil {
+				return false
+			}
+			if len(playlist.Variants) == 0 {
+				return false
+			}
+			variant := playlist.Variants[0]
+			if variant == nil {
+				return false
+			}
+			available := checkStream(variant.URI, stream, client)
+			if !available {
+				return false
+			}
+			stream.hlsPlaylist = playlist
+			return true
+
+		case m3u8.MEDIA:
+			mediaPlaylist := p.(*m3u8.MediaPlaylist)
+			segment := mediaPlaylist.Segments[0]
+			if segment == nil {
+				return false
+			}
+			return checkStream(segment.URI, stream, client)
+		default:
+			log.Printf("Unknown m3u8 playlist type: %v\n", listType)
+			return false
+		}
+	case "application/x-mpegurl":
+		fallthrough
+	case "audio/x-mpegurl":
+		fallthrough
+	case "audio/mpeg":
+		fallthrough
+	case "audio/aacp":
+		fallthrough
+	case "audio/aac":
+		fallthrough
+	case "audio/mp4":
+		fallthrough
+	case "audio/x-aac":
+		fallthrough
+	case "video/mp2t":
+		fallthrough
+	case "binary/octet-stream":
+		return true
+	default:
+		return false
+	}
 }
