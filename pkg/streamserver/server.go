@@ -307,11 +307,16 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streams[streamID].Serve(w, r, serverConfig.DefaultTimeout); err != nil {
+	stream := streams[streamID]
+	stream.mux.Lock()
+	if !stream.active {
 		log.Printf("Error serving stream stream: %v\n", err)
 		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
+		stream.mux.Unlock()
 		return
 	}
+	stream.mux.Unlock()
+	stream.Serve(w, r)
 }
 
 func handleInternalStream(w http.ResponseWriter, r *http.Request) {

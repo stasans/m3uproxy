@@ -109,15 +109,10 @@ func (stream *Stream) HealthCheck(timeout int) {
 	stream.mux.Unlock()
 }
 
-func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
+func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	path := vars["path"]
-
-	if !stream.active {
-		stream.mux.Unlock()
-		return errors.New("stream not active")
-	}
 
 	if path == m3uPlaylist {
 		stream.mux.Lock()
@@ -126,14 +121,15 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(stream.masterPlaylist.String()))
 			stream.mux.Unlock()
-			return nil
+			return
 		}
 		stream.mux.Unlock()
 	}
 
-	resp, err := stream.Get(path, timeout)
+	resp, err := stream.Get(path, serverConfig.DefaultTimeout)
 	if err != nil {
-		return err
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	defer resp.Body.Close()
@@ -144,7 +140,7 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 
-	return nil
+	return
 
 }
 
