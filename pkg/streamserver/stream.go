@@ -94,15 +94,19 @@ func (stream *Stream) HttpRequest(opts StreamRequestOptions) (*http.Request, err
 func (stream *Stream) HealthCheck(timeout int) {
 
 	stream.mux.Lock()
-	defer stream.mux.Unlock()
-
 	stream.active = false
 	stream.masterPlaylist = nil
+	stream.mux.Unlock()
+
 	resp, err := stream.Get(m3uPlaylist, timeout)
 	if err != nil {
 		return
 	}
-	stream.active = stream.validateM3U8Stream(resp)
+
+	streamActive := stream.validateM3U8Stream(resp)
+	stream.mux.Lock()
+	stream.active = streamActive
+	stream.mux.Unlock()
 }
 
 func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
@@ -110,34 +114,13 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 	vars := mux.Vars(r)
 	path := vars["path"]
 
-	stream.mux.Lock()
-
 	if !stream.active {
 		stream.mux.Unlock()
 		return errors.New("stream not active")
 	}
 
-	transport := http.DefaultTransport.(*http.Transport)
-	if stream.httpProxy != "" {
-		proxyURL, err := url.Parse(stream.httpProxy)
-		if err == nil {
-			transport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-		}
-	}
-
-	client := &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
-		Transport: transport,
-	}
-
-	opts := StreamRequestOptions{
-		Path:   m3uPlaylist,
-		Method: "GET",
-	}
-
 	if path == m3uPlaylist {
+		stream.mux.Lock()
 		if stream.masterPlaylist != nil {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.WriteHeader(http.StatusOK)
@@ -145,35 +128,15 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 			stream.mux.Unlock()
 			return nil
 		}
-	} else {
-		opts.Path = path
-		opts.Query = r.URL.RawQuery
-	}
-
-	req, err := stream.HttpRequest(opts)
-	if err != nil {
 		stream.mux.Unlock()
-		return errors.New("failed to fetch stream")
 	}
 
-	stream.mux.Unlock()
-
-	resp, err := client.Do(req)
-
+	resp, err := stream.Get(path, timeout)
 	if err != nil {
 		return err
 	}
 
 	defer resp.Body.Close()
-
-	code := resp.StatusCode / 100
-	if code != 2 {
-		return errors.New("invalid server status code")
-	}
-
-	if resp.StatusCode == http.StatusNoContent {
-		return errors.New("no content")
-	}
 
 	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
 	w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
@@ -185,7 +148,9 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 
 }
 
-func (stream *Stream) Get(path string, timeout int) (*http.Response, error) {
+func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
+
+	stream.mux.Lock()
 
 	transport := http.DefaultTransport.(*http.Transport)
 	if stream.httpProxy != "" {
@@ -202,24 +167,54 @@ func (stream *Stream) Get(path string, timeout int) (*http.Response, error) {
 		Transport: transport,
 	}
 
-	req, err := stream.HttpRequest(StreamRequestOptions{
-		Path:   path,
-		Method: "GET",
-	})
-
+	uri, err := url.Parse(URI)
 	if err != nil {
+		stream.mux.Unlock()
 		return nil, err
 	}
+
+	if uri.Scheme != "" {
+		stream.mux.Unlock()
+		resp, err := client.Get(URI)
+		if err != nil {
+			return nil, err
+		}
+		return resp, nil
+	}
+
+	opts := StreamRequestOptions{
+		Path:   m3uPlaylist,
+		Method: "GET",
+	}
+
+	if uri.Path != m3uPlaylist {
+		opts.Path = uri.Path
+		opts.Query = uri.RawQuery
+	}
+
+	req, err := stream.HttpRequest(opts)
+
+	if err != nil {
+		stream.mux.Unlock()
+		return nil, err
+	}
+	stream.mux.Unlock()
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	code := resp.StatusCode / 100
+	if code != 2 {
 		return nil, errors.New("invalid server status code")
 	}
 
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, errors.New("no content")
+	}
+
+	stream.mux.Lock()
 	if resp.Request.URL.String() != stream.m3u.URI {
 		stream.m3u.URI = resp.Request.URL.String()
 		if strings.LastIndex(resp.Request.URL.Path, "/") != -1 {
@@ -228,6 +223,7 @@ func (stream *Stream) Get(path string, timeout int) (*http.Response, error) {
 			stream.prefix = ""
 		}
 	}
+	stream.mux.Unlock()
 
 	contentType := resp.Header.Get("Content-Type")
 	parts := strings.Split(contentType, ";")
@@ -265,7 +261,6 @@ func (stream *Stream) validateM3U8Stream(resp *http.Response) bool {
 
 	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
 	if err != nil {
-		log.Printf("Failed to decode m3u8 playlist: %v\n", err)
 		return false
 	}
 	resp.Body.Close()
