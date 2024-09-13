@@ -281,10 +281,10 @@ func Shutdown() {
 	log.Printf("Stream server stopped\n")
 }
 
-func StreamServer(next *mux.Router) http.Handler {
-	next.HandleFunc("/"+m3uInternalPath+"/{path:.*}", handleInternalStream).Methods("GET")
-	next.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", handleStreamRequest).Methods("GET")
-	next.HandleFunc("/streams.m3u", handleStreamPlaylist).Methods("GET")
+func Routes(next *mux.Router) http.Handler {
+	next.HandleFunc("/"+m3uInternalPath+"/{path:.*}", handleInternalStream)
+	next.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", handleStreamRequest)
+	next.HandleFunc("/streams.m3u", handleStreamPlaylist)
 	return next
 }
 

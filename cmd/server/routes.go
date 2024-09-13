@@ -17,14 +17,14 @@ func routes(config *rootCmd.Config) http.Handler {
 
 	// Streams and EPG endpoints
 	epgFilePath = config.Epg
-	r.HandleFunc("/epg.xml", getEpg).Methods("GET")
-	r.HandleFunc("/player", getPlayer).Methods("GET")
+	r.HandleFunc("/epg.xml", getEpg)
+	r.HandleFunc("/player", getPlayer)
 	// Health check endpoint
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}).Methods("GET")
+	})
 
-	return streamserver.StreamServer(r)
+	return streamserver.Routes(r)
 }
 
 func getEpg(w http.ResponseWriter, r *http.Request) {
