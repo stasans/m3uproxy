@@ -22,10 +22,14 @@ THE SOFTWARE.
 package streamserver
 
 import (
+	"bufio"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +44,7 @@ type Stream struct {
 	m3u              m3uparser.M3UEntry
 	prefix           string
 	active           bool
-	hlsPlaylist      *m3u8.MasterPlaylist
+	masterPlaylist   *m3u8.MasterPlaylist
 	mux              *sync.Mutex
 	headers          map[string]string
 	httpProxy        string
@@ -54,7 +58,7 @@ type StreamRequestOptions struct {
 	Method string
 }
 
-func (stream *Stream) HttpRequest(opts StreamRequestOptions) (*http.Request, error) {
+func (stream *Stream) GenerateHttpRequest(opts StreamRequestOptions) (*http.Request, error) {
 
 	path, _ := url.Parse(opts.Path)
 	streamURL := &url.URL{}
@@ -91,39 +95,59 @@ func (stream *Stream) HttpRequest(opts StreamRequestOptions) (*http.Request, err
 func (stream *Stream) HealthCheck(timeout int) {
 
 	stream.mux.Lock()
-	defer stream.mux.Unlock()
-
-	transport := http.DefaultTransport.(*http.Transport)
-	if stream.httpProxy != "" {
-		proxyURL, err := url.Parse(stream.httpProxy)
-		if err == nil {
-			transport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-		}
-	}
-
-	client := &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
-		Transport: transport,
-	}
-
 	stream.active = false
-	stream.hlsPlaylist = nil
-	stream.active = checkStream(m3uPlaylist, stream, client)
+	stream.masterPlaylist = nil
+	stream.mux.Unlock()
+
+	resp, err := stream.Get(m3uPlaylist, timeout)
+	if err != nil {
+		return
+	}
+
+	streamActive := true
+	switch getContentType(resp) {
+	case "application/vnd.apple.mpegurl":
+		fallthrough
+	case "application/x-mpegurl":
+		streamActive = stream.validateM3UStream(resp)
+	default:
+		streamActive = true
+	}
+
+	stream.mux.Lock()
+	stream.active = streamActive
+	stream.mux.Unlock()
 }
 
-func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
+func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	path := vars["path"]
 
-	stream.mux.Lock()
-
-	if !stream.active {
+	if path == m3uPlaylist {
+		stream.mux.Lock()
+		if stream.masterPlaylist != nil {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(stream.masterPlaylist.String()))
+			stream.mux.Unlock()
+			return
+		}
 		stream.mux.Unlock()
-		return errors.New("stream not active")
 	}
+
+	resp, err := stream.Get(path, serverConfig.DefaultTimeout)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	stream.handleStreamResponse(w, resp)
+}
+
+func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
+
+	stream.mux.Lock()
 
 	transport := http.DefaultTransport.(*http.Transport)
 	if stream.httpProxy != "" {
@@ -140,55 +164,197 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 		Transport: transport,
 	}
 
-	opts := StreamRequestOptions{}
-
-	if path == m3uPlaylist {
-		if stream.hlsPlaylist != nil {
-			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(stream.hlsPlaylist.String()))
-			stream.mux.Unlock()
-			return nil
-		}
-		opts.Path = m3uPlaylist
-		opts.Method = "GET"
-	} else {
-		opts.Path = path
-		opts.Method = "GET"
-		opts.Query = r.URL.RawQuery
-	}
-
-	req, err := stream.HttpRequest(opts)
+	uri, err := url.Parse(URI)
 	if err != nil {
 		stream.mux.Unlock()
-		return errors.New("failed to fetch stream")
+		return nil, err
 	}
 
+	if uri.Scheme != "" {
+		stream.mux.Unlock()
+		resp, err := client.Get(URI)
+		if err != nil {
+			return nil, err
+		}
+		return resp, nil
+	}
+
+	opts := StreamRequestOptions{
+		Path:   m3uPlaylist,
+		Method: "GET",
+	}
+
+	if uri.Path != m3uPlaylist {
+		opts.Path = uri.Path
+		opts.Query = uri.RawQuery
+	}
+
+	req, err := stream.GenerateHttpRequest(opts)
+
+	if err != nil {
+		stream.mux.Unlock()
+		return nil, err
+	}
 	stream.mux.Unlock()
 
 	resp, err := client.Do(req)
-
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	defer resp.Body.Close()
 
 	code := resp.StatusCode / 100
 	if code != 2 {
-		return errors.New("invalid server status code")
+		return nil, errors.New("invalid server status code")
 	}
 
 	if resp.StatusCode == http.StatusNoContent {
-		return errors.New("no content")
+		return nil, errors.New("no content")
 	}
 
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+	stream.mux.Lock()
+	if resp.Request.URL.String() != stream.m3u.URI {
+		stream.m3u.URI = resp.Request.URL.String()
+		if strings.LastIndex(resp.Request.URL.Path, "/") != -1 {
+			stream.prefix = resp.Request.URL.Path[:strings.LastIndex(resp.Request.URL.Path, "/")]
+		} else {
+			stream.prefix = ""
+		}
+	}
+	stream.mux.Unlock()
 
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	switch getContentType(resp) {
+	case "application/vnd.apple.mpegurl":
+		fallthrough
+	case "application/x-mpegurl":
+		fallthrough
+	case "audio/x-mpegurl":
+		fallthrough
+	case "audio/mpeg":
+		fallthrough
+	case "audio/aacp":
+		fallthrough
+	case "audio/aac":
+		fallthrough
+	case "audio/mp4":
+		fallthrough
+	case "audio/x-aac":
+		fallthrough
+	case "video/mp2t":
+		fallthrough
+	case "binary/octet-stream":
+		return resp, nil
+	default:
+		return nil, errors.New("invalid content type")
+	}
+}
 
-	return nil
+func (stream *Stream) validateM3UStream(resp *http.Response) bool {
 
+	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+
+	switch listType {
+	case m3u8.MASTER:
+
+		playlist := p.(*m3u8.MasterPlaylist)
+		if playlist == nil {
+			return false
+		}
+
+		if len(playlist.Variants) == 0 {
+			return false
+		}
+
+		variant := playlist.Variants[0]
+		if variant == nil {
+			return false
+		}
+
+		if _, err := stream.Get(variant.URI, serverConfig.DefaultTimeout); err != nil {
+			return false
+		}
+		if len(playlist.Variants) == 0 {
+			return true
+		}
+
+		resp, err := stream.Get(playlist.Variants[0].URI, serverConfig.DefaultTimeout)
+		if err != nil {
+			return false
+		}
+
+		stream.masterPlaylist = playlist
+
+		return stream.validateM3UStream(resp)
+
+	case m3u8.MEDIA:
+		mediaPlaylist := p.(*m3u8.MediaPlaylist)
+		segment := mediaPlaylist.Segments[0]
+		if segment == nil {
+			return false
+		}
+		_, err := stream.Get(segment.URI, serverConfig.DefaultTimeout)
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return err == nil
+	default:
+		log.Printf("Unknown m3u8 playlist type: %v\n", listType)
+		return false
+	}
+
+}
+
+func (stream *Stream) handleStreamResponse(w http.ResponseWriter, resp *http.Response) {
+
+	switch getContentType(resp) {
+	case "application/vnd.apple.mpegurl":
+		fallthrough
+	case "application/x-mpegurl":
+		p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+		resp.Body.Close()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		switch listType {
+		case m3u8.MASTER:
+			playlist := p.(*m3u8.MasterPlaylist)
+			content := playlist.String()
+			w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+			w.WriteHeader(resp.StatusCode)
+			w.Write([]byte(content))
+			return
+		case m3u8.MEDIA:
+			playlist := p.(*m3u8.MediaPlaylist)
+			content := playlist.String()
+			w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+			w.WriteHeader(resp.StatusCode)
+			w.Write([]byte(content))
+			return
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	case "audio/x-mpegurl":
+		fallthrough
+	case "audio/mpeg":
+		fallthrough
+	case "audio/aacp":
+		fallthrough
+	case "audio/aac":
+		fallthrough
+	case "audio/mp4":
+		fallthrough
+	case "audio/x-aac":
+		fallthrough
+	case "video/mp2t":
+		fallthrough
+	case "binary/octet-stream":
+		w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+		io.Copy(w, resp.Body)
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }

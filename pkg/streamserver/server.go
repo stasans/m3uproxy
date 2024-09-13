@@ -150,7 +150,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			m3u:              entry,
 			prefix:           prefix,
 			active:           false,
-			hlsPlaylist:      nil,
+			masterPlaylist:   nil,
 			headers:          headers,
 			httpProxy:        proxy,
 			forceKodiHeaders: forceKodiHeaders,
@@ -307,11 +307,16 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := streams[streamID].Serve(w, r, serverConfig.DefaultTimeout); err != nil {
+	stream := streams[streamID]
+	stream.mux.Lock()
+	if !stream.active {
 		log.Printf("Error serving stream stream: %v\n", err)
 		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
+		stream.mux.Unlock()
 		return
 	}
+	stream.mux.Unlock()
+	stream.Serve(w, r)
 }
 
 func handleInternalStream(w http.ResponseWriter, r *http.Request) {
@@ -374,7 +379,7 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		}
 		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
 		if !stream.radio {
-			if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.hlsPlaylist != nil) {
+			if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.masterPlaylist != nil) {
 				entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
 				entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
 			}
