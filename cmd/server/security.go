@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -53,9 +54,9 @@ func configureGeoIp() error {
 		return err
 	}
 
-	geoipAllowedCountries := make(map[string]bool)
+	geoipWhitelist = make(map[string]bool)
 	for _, country := range securityConfig.GeoIP.Whitelist {
-		geoipAllowedCountries[country] = true
+		geoipWhitelist[country] = true
 	}
 
 	geoIPCidrWhitelist = make([]*net.IPNet, 0)
@@ -122,6 +123,7 @@ func geoip(next http.Handler) http.Handler {
 
 		countryCode := record.Country.IsoCode
 		if _, ok := geoipWhitelist[countryCode]; !ok {
+			log.Printf("Access Denied: %s, Country: %s\n", ip, countryCode)
 			http.Error(w, "Access Denied", http.StatusForbidden)
 			return
 		}
