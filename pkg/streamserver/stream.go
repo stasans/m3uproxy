@@ -22,10 +22,13 @@ THE SOFTWARE.
 package streamserver
 
 import (
+	"bufio"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -93,24 +96,13 @@ func (stream *Stream) HealthCheck(timeout int) {
 	stream.mux.Lock()
 	defer stream.mux.Unlock()
 
-	transport := http.DefaultTransport.(*http.Transport)
-	if stream.httpProxy != "" {
-		proxyURL, err := url.Parse(stream.httpProxy)
-		if err == nil {
-			transport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-		}
-	}
-
-	client := &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
-		Transport: transport,
-	}
-
 	stream.active = false
 	stream.masterPlaylist = nil
-	stream.active = readStream(m3uPlaylist, stream, client)
+	resp, err := stream.Get(m3uPlaylist, timeout)
+	if err != nil {
+		return
+	}
+	stream.active = stream.validateM3U8Stream(resp)
 }
 
 func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
@@ -190,5 +182,140 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 	io.Copy(w, resp.Body)
 
 	return nil
+
+}
+
+func (stream *Stream) Get(path string, timeout int) (*http.Response, error) {
+
+	transport := http.DefaultTransport.(*http.Transport)
+	if stream.httpProxy != "" {
+		proxyURL, err := url.Parse(stream.httpProxy)
+		if err == nil {
+			transport = &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			}
+		}
+	}
+
+	client := &http.Client{
+		Timeout:   time.Duration(timeout) * time.Second,
+		Transport: transport,
+	}
+
+	req, err := stream.HttpRequest(StreamRequestOptions{
+		Path:   path,
+		Method: "GET",
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("invalid server status code")
+	}
+
+	if resp.Request.URL.String() != stream.m3u.URI {
+		stream.m3u.URI = resp.Request.URL.String()
+		if strings.LastIndex(resp.Request.URL.Path, "/") != -1 {
+			stream.prefix = resp.Request.URL.Path[:strings.LastIndex(resp.Request.URL.Path, "/")]
+		} else {
+			stream.prefix = ""
+		}
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	parts := strings.Split(contentType, ";")
+	if len(parts) > 1 {
+		contentType = strings.TrimRight(parts[0], " ")
+	}
+	contentType = strings.ToLower(contentType)
+	switch contentType {
+	case "application/vnd.apple.mpegurl":
+		fallthrough
+	case "application/x-mpegurl":
+		fallthrough
+	case "audio/x-mpegurl":
+		fallthrough
+	case "audio/mpeg":
+		fallthrough
+	case "audio/aacp":
+		fallthrough
+	case "audio/aac":
+		fallthrough
+	case "audio/mp4":
+		fallthrough
+	case "audio/x-aac":
+		fallthrough
+	case "video/mp2t":
+		fallthrough
+	case "binary/octet-stream":
+		return resp, nil
+	default:
+		return nil, errors.New("invalid content type")
+	}
+}
+
+func (stream *Stream) validateM3U8Stream(resp *http.Response) bool {
+
+	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+	if err != nil {
+		log.Printf("Failed to decode m3u8 playlist: %v\n", err)
+		return false
+	}
+	resp.Body.Close()
+
+	switch listType {
+	case m3u8.MASTER:
+
+		playlist := p.(*m3u8.MasterPlaylist)
+		if playlist == nil {
+			return false
+		}
+
+		if len(playlist.Variants) == 0 {
+			return false
+		}
+
+		variant := playlist.Variants[0]
+		if variant == nil {
+			return false
+		}
+
+		if _, err := stream.Get(variant.URI, serverConfig.DefaultTimeout); err != nil {
+			return false
+		}
+		if len(playlist.Variants) == 0 {
+			return true
+		}
+
+		resp, err := stream.Get(playlist.Variants[0].URI, serverConfig.DefaultTimeout)
+		if err != nil {
+			return false
+		}
+
+		stream.masterPlaylist = playlist
+
+		return stream.validateM3U8Stream(resp)
+
+	case m3u8.MEDIA:
+		mediaPlaylist := p.(*m3u8.MediaPlaylist)
+		segment := mediaPlaylist.Segments[0]
+		if segment == nil {
+			return false
+		}
+		_, err := stream.Get(segment.URI, serverConfig.DefaultTimeout)
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return err == nil
+	default:
+		log.Printf("Unknown m3u8 playlist type: %v\n", listType)
+		return false
+	}
 
 }
