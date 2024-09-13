@@ -24,6 +24,7 @@ package streamserver
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -57,7 +58,7 @@ type StreamRequestOptions struct {
 	Method string
 }
 
-func (stream *Stream) HttpRequest(opts StreamRequestOptions) (*http.Request, error) {
+func (stream *Stream) GenerateHttpRequest(opts StreamRequestOptions) (*http.Request, error) {
 
 	path, _ := url.Parse(opts.Path)
 	streamURL := &url.URL{}
@@ -103,7 +104,16 @@ func (stream *Stream) HealthCheck(timeout int) {
 		return
 	}
 
-	streamActive := stream.validateM3U8Stream(resp)
+	streamActive := true
+	switch getContentType(resp) {
+	case "application/vnd.apple.mpegurl":
+		fallthrough
+	case "application/x-mpegurl":
+		streamActive = stream.validateM3UStream(resp)
+	default:
+		streamActive = true
+	}
+
 	stream.mux.Lock()
 	stream.active = streamActive
 	stream.mux.Unlock()
@@ -132,16 +142,7 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer resp.Body.Close()
-
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
-
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
-
-	return
-
+	stream.handleStreamResponse(w, resp)
 }
 
 func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
@@ -188,7 +189,7 @@ func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
 		opts.Query = uri.RawQuery
 	}
 
-	req, err := stream.HttpRequest(opts)
+	req, err := stream.GenerateHttpRequest(opts)
 
 	if err != nil {
 		stream.mux.Unlock()
@@ -221,13 +222,7 @@ func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
 	}
 	stream.mux.Unlock()
 
-	contentType := resp.Header.Get("Content-Type")
-	parts := strings.Split(contentType, ";")
-	if len(parts) > 1 {
-		contentType = strings.TrimRight(parts[0], " ")
-	}
-	contentType = strings.ToLower(contentType)
-	switch contentType {
+	switch getContentType(resp) {
 	case "application/vnd.apple.mpegurl":
 		fallthrough
 	case "application/x-mpegurl":
@@ -253,7 +248,7 @@ func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
 	}
 }
 
-func (stream *Stream) validateM3U8Stream(resp *http.Response) bool {
+func (stream *Stream) validateM3UStream(resp *http.Response) bool {
 
 	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
 	if err != nil {
@@ -292,7 +287,7 @@ func (stream *Stream) validateM3U8Stream(resp *http.Response) bool {
 
 		stream.masterPlaylist = playlist
 
-		return stream.validateM3U8Stream(resp)
+		return stream.validateM3UStream(resp)
 
 	case m3u8.MEDIA:
 		mediaPlaylist := p.(*m3u8.MediaPlaylist)
@@ -309,4 +304,57 @@ func (stream *Stream) validateM3U8Stream(resp *http.Response) bool {
 		return false
 	}
 
+}
+
+func (stream *Stream) handleStreamResponse(w http.ResponseWriter, resp *http.Response) {
+
+	switch getContentType(resp) {
+	case "application/vnd.apple.mpegurl":
+		fallthrough
+	case "application/x-mpegurl":
+		p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+		resp.Body.Close()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		switch listType {
+		case m3u8.MASTER:
+			playlist := p.(*m3u8.MasterPlaylist)
+			content := playlist.String()
+			w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+			w.WriteHeader(resp.StatusCode)
+			w.Write([]byte(content))
+			return
+		case m3u8.MEDIA:
+			playlist := p.(*m3u8.MediaPlaylist)
+			content := playlist.String()
+			w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+			w.WriteHeader(resp.StatusCode)
+			w.Write([]byte(content))
+			return
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+	case "audio/x-mpegurl":
+		fallthrough
+	case "audio/mpeg":
+		fallthrough
+	case "audio/aacp":
+		fallthrough
+	case "audio/aac":
+		fallthrough
+	case "audio/mp4":
+		fallthrough
+	case "audio/x-aac":
+		fallthrough
+	case "video/mp2t":
+		fallthrough
+	case "binary/octet-stream":
+		w.Header().Set("Content-Length", resp.Header.Get("Content-Length"))
+		io.Copy(w, resp.Body)
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }

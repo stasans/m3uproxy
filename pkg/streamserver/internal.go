@@ -140,3 +140,12 @@ func updatePlaylistAndMonitor(config StreamServerConfig, stopServer chan bool, q
 	log.Println("Streams loading completed")
 
 }
+
+func getContentType(resp *http.Response) string {
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		return "application/octet-stream"
+	}
+	contentType = strings.ToLower(contentType)
+	return contentType
+}
