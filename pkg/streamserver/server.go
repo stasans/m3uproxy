@@ -150,7 +150,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			m3u:              entry,
 			prefix:           prefix,
 			active:           false,
-			hlsPlaylist:      nil,
+			masterPlaylist:   nil,
 			headers:          headers,
 			httpProxy:        proxy,
 			forceKodiHeaders: forceKodiHeaders,
@@ -374,7 +374,7 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		}
 		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
 		if !stream.radio {
-			if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.hlsPlaylist != nil) {
+			if stream.forceKodiHeaders || (serverConfig.KodiSupport && stream.masterPlaylist != nil) {
 				entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
 				entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
 			}

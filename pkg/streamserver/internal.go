@@ -143,7 +143,7 @@ func updatePlaylistAndMonitor(config StreamServerConfig, stopServer chan bool, q
 
 }
 
-func checkStream(path string, stream *Stream, client *http.Client) bool {
+func readStream(path string, stream *Stream, client *http.Client) bool {
 
 	req, err := stream.HttpRequest(StreamRequestOptions{
 		Path:   path,
@@ -194,18 +194,20 @@ func checkStream(path string, stream *Stream, client *http.Client) bool {
 			if playlist == nil {
 				return false
 			}
+
 			if len(playlist.Variants) == 0 {
 				return false
 			}
+
 			variant := playlist.Variants[0]
 			if variant == nil {
 				return false
 			}
-			available := checkStream(variant.URI, stream, client)
-			if !available {
+
+			if !readStream(variant.URI, stream, client) {
 				return false
 			}
-			stream.hlsPlaylist = playlist
+			stream.masterPlaylist = playlist
 			return true
 
 		case m3u8.MEDIA:
@@ -214,7 +216,7 @@ func checkStream(path string, stream *Stream, client *http.Client) bool {
 			if segment == nil {
 				return false
 			}
-			return checkStream(segment.URI, stream, client)
+			return readStream(segment.URI, stream, client)
 		default:
 			log.Printf("Unknown m3u8 playlist type: %v\n", listType)
 			return false

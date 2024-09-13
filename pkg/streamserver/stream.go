@@ -40,7 +40,7 @@ type Stream struct {
 	m3u              m3uparser.M3UEntry
 	prefix           string
 	active           bool
-	hlsPlaylist      *m3u8.MasterPlaylist
+	masterPlaylist   *m3u8.MasterPlaylist
 	mux              *sync.Mutex
 	headers          map[string]string
 	httpProxy        string
@@ -109,8 +109,8 @@ func (stream *Stream) HealthCheck(timeout int) {
 	}
 
 	stream.active = false
-	stream.hlsPlaylist = nil
-	stream.active = checkStream(m3uPlaylist, stream, client)
+	stream.masterPlaylist = nil
+	stream.active = readStream(m3uPlaylist, stream, client)
 }
 
 func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int) error {
@@ -140,21 +140,21 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request, timeout int)
 		Transport: transport,
 	}
 
-	opts := StreamRequestOptions{}
+	opts := StreamRequestOptions{
+		Path:   m3uPlaylist,
+		Method: "GET",
+	}
 
 	if path == m3uPlaylist {
-		if stream.hlsPlaylist != nil {
+		if stream.masterPlaylist != nil {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(stream.hlsPlaylist.String()))
+			w.Write([]byte(stream.masterPlaylist.String()))
 			stream.mux.Unlock()
 			return nil
 		}
-		opts.Path = m3uPlaylist
-		opts.Method = "GET"
 	} else {
 		opts.Path = path
-		opts.Method = "GET"
 		opts.Query = r.URL.RawQuery
 	}
 
