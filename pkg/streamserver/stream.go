@@ -94,11 +94,6 @@ func (stream *Stream) GenerateHttpRequest(opts StreamRequestOptions) (*http.Requ
 
 func (stream *Stream) HealthCheck(timeout int) {
 
-	stream.mux.Lock()
-	stream.active = false
-	stream.masterPlaylist = nil
-	stream.mux.Unlock()
-
 	resp, err := stream.Get(m3uPlaylist, timeout)
 	if err != nil {
 		return
@@ -261,31 +256,30 @@ func (stream *Stream) validateM3UStream(resp *http.Response) bool {
 
 		playlist := p.(*m3u8.MasterPlaylist)
 		if playlist == nil {
+			stream.mux.Lock()
+			stream.masterPlaylist = nil
+			stream.mux.Unlock()
 			return false
 		}
 
 		if len(playlist.Variants) == 0 {
+			stream.mux.Lock()
+			stream.masterPlaylist = nil
+			stream.mux.Unlock()
 			return false
-		}
-
-		variant := playlist.Variants[0]
-		if variant == nil {
-			return false
-		}
-
-		if _, err := stream.Get(variant.URI, serverConfig.DefaultTimeout); err != nil {
-			return false
-		}
-		if len(playlist.Variants) == 0 {
-			return true
 		}
 
 		resp, err := stream.Get(playlist.Variants[0].URI, serverConfig.DefaultTimeout)
 		if err != nil {
+			stream.mux.Lock()
+			stream.masterPlaylist = nil
+			stream.mux.Unlock()
 			return false
 		}
 
+		stream.mux.Lock()
 		stream.masterPlaylist = playlist
+		stream.mux.Unlock()
 
 		return stream.validateM3UStream(resp)
 
