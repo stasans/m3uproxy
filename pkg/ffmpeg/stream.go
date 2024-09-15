@@ -24,6 +24,10 @@ func (s *HLSStream) Serve(w http.ResponseWriter, r *http.Request) {
 	// Set the appropriate content type for .m3u8 and .ts files
 	if filepath.Ext(path) == ".m3u8" {
 		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		if path == "master.m3u8" {
+			w.Write([]byte("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=800000\nindex.m3u8\n"))
+			return
+		}
 	} else if filepath.Ext(path) == ".ts" {
 		w.Header().Set("Content-Type", "video/mp2t")
 	} else {

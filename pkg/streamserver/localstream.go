@@ -22,45 +22,38 @@ THE SOFTWARE.
 package streamserver
 
 import (
-	"encoding/base64"
 	"net/http"
-	"strings"
+	"sync"
+
+	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 )
 
-func getUserCredentials(r *http.Request) (string, string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", "", false
-	}
-
-	authParts := strings.SplitN(authHeader, " ", 2)
-	if len(authParts) != 2 || authParts[0] != "Basic" {
-		return "", "", false
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(authParts[1])
-	if err != nil {
-		return "", "", false
-	}
-
-	credentials := strings.SplitN(string(decoded), ":", 2)
-	if len(credentials) != 2 {
-		return "", "", false
-	}
-
-	return credentials[0], credentials[1], true
+type LocalStream struct {
+	Stream
+	stream *ffmpeg.HLSStream
 }
 
-func getJWTToken(r *http.Request) (string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", false
+func NewImageStream(image, id string) *LocalStream {
+	return &LocalStream{
+		Stream: Stream{
+			mux: &sync.Mutex{},
+		},
+		stream: ffmpeg.GenerateImageHLS(image, id),
 	}
+}
 
-	authParts := strings.SplitN(authHeader, " ", 2)
-	if len(authParts) != 2 || authParts[0] != "Bearer" {
-		return "", false
-	}
+func (stream *LocalStream) Start() error {
+	return stream.stream.Start()
+}
 
-	return authParts[1], true
+func (stream *LocalStream) Stop() error {
+	return stream.stream.Stop()
+}
+
+func (stream *LocalStream) Cleanup() {
+	stream.stream.Cleanup()
+}
+
+func (stream *LocalStream) Serve(w http.ResponseWriter, r *http.Request) {
+	stream.stream.Serve(w, r)
 }

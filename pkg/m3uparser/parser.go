@@ -116,10 +116,10 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 		reader = file
 	}
 
-	return ParseM3U(reader)
+	return DecodeFromReader(reader)
 }
 
-func readString(buf io.ReadCloser) (string, error) {
+func readString(buf io.Reader) (string, error) {
 	var content string
 
 	b := make([]byte, 1)
@@ -141,12 +141,64 @@ func readString(buf io.ReadCloser) (string, error) {
 	return content, nil
 }
 
-// ParseM3UFile reads an M3U file and returns a parsed M3UPlaylist.
+func assertM3UHeader(buf io.Reader) error {
+	// Read first line
+	line, err := readString(buf)
+	if err != nil {
+		return err
+	}
 
-func ParseM3U(buf io.ReadCloser) (*M3UPlaylist, error) {
+	if !strings.HasPrefix(line, "#EXTM3U") {
+		return errors.New("invalid M3U file")
+	}
+
+	return nil
+}
+
+func processLine(buf io.Reader) (M3UTag, string, error) {
+
+	for {
+		// Read line
+		line, err := readString(buf)
+		if err != nil {
+			return M3UTag{}, "", err
+		}
+
+		line = strings.TrimSpace(line)
+		if len(line) == 0 {
+			// Ignore empty lines and comments that aren't tags
+			continue
+		}
+
+		if !strings.HasPrefix(line, "#") {
+			return M3UTag{}, line, nil
+		}
+
+		tag, err := parseTag(line)
+		if err != nil {
+			// Ignore invalid tags or comments
+			continue
+		}
+
+		if !contains(M3U8Directives, tag.Tag) {
+			// Ignore unknown tags
+			continue
+		}
+
+		return tag, "", err
+	}
+}
+
+func DecodeFromReader(buf io.Reader) (*M3UPlaylist, error) {
+
+	// Consume header
+	err := assertM3UHeader(buf)
+	if err != nil {
+		return nil, err
+	}
 
 	playlist := &M3UPlaylist{
-		Version: 0, // Default M3U8 version
+		Version: M3U8Version3, // Default M3U8 version
 		Entries: make([]M3UEntry, 0),
 		Tags:    make([]M3UTag, 0),
 		Type:    "master",
@@ -156,89 +208,66 @@ func ParseM3U(buf io.ReadCloser) (*M3UPlaylist, error) {
 	var currentEntry *M3UEntry
 
 	for {
-		// Read line
-		line, err := readString(buf)
+
+		tag, line, err := processLine(buf)
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			return nil, err
-		}
-
-		line = strings.TrimSpace(line)
-		if len(line) == 0 {
-			// Ignore empty lines and comments that aren't tags
 			continue
 		}
 
-		if strings.HasPrefix(line, "#") {
-			// Handle tags
-			tag, err := parseTag(line)
-			if err != nil {
-				// Ignore invalid tags or comments
-				continue
-			}
-
-			if !contains(M3U8Directives, tag.Tag) {
-				// Ignore unknown tags
-				continue
-			}
-
-			if tag.Tag == "EXTM3U" {
-				playlist.Version = M3U8Version3
-				continue
-			}
-
-			if tag.Tag == "EXTINF" {
-				// Handle EXTINF tag
-				currentEntry = &M3UEntry{
-					Tags: []M3UTag{tag},
-				}
-				parts := strings.SplitN(line[8:], ",", 2)
-				if len(parts) > 0 {
-					currentEntry.Duration = parseDuration(parts[0])
-					if currentEntry.Duration == -1 {
-						currentEntry.TVGTags = ParseTVGTags(parts[0][2:])
-					}
-				} else {
-					currentEntry.Duration = -1
-				}
-				if len(parts) > 1 {
-					currentEntry.Title = parts[1]
-				}
-				continue
-			}
-
-			if tag.Tag == "EXT-X-STREAM-INF" {
-				currentEntry = &M3UEntry{
-					Tags: []M3UTag{tag}, // Add the EXT-X-STREAM-INF tag
-				}
-				continue
-			}
-
+		if line != "" {
 			if currentEntry != nil {
-				currentEntry.Tags = append(currentEntry.Tags, tag)
+				currentEntry.URI = line
+				playlist.Entries = append(playlist.Entries, *currentEntry)
+				currentEntry = nil
 			} else {
+				return nil, errors.New("invalid M3U file")
+			}
+			continue
+		}
 
-				if tag.Tag == "EXT-X-INDEPENDENT-SEGMENTS" {
-					playlist.Type = "master"
-				} else if tag.Tag == "EXT-X-MEDIA-SEQUENCE" {
-					playlist.Type = "media"
+		if tag.Tag == "EXTINF" {
+			// Handle EXTINF tag
+			currentEntry = &M3UEntry{
+				Tags: []M3UTag{tag},
+			}
+			parts := strings.SplitN(tag.Value, ",", 2)
+			if len(parts) > 0 {
+				currentEntry.Duration = parseDuration(parts[0])
+				if currentEntry.Duration == -1 {
+					currentEntry.TVGTags = ParseTVGTags(parts[0][2:])
 				}
+			} else {
+				currentEntry.Duration = -1
+			}
+			if len(parts) > 1 {
+				currentEntry.Title = parts[1]
+			}
+			continue
+		}
 
-				playlist.Tags = append(playlist.Tags, tag)
+		if tag.Tag == "EXT-X-STREAM-INF" {
+			currentEntry = &M3UEntry{
+				Tags: []M3UTag{tag}, // Add the EXT-X-STREAM-INF tag
+			}
+			continue
+		}
+
+		if currentEntry != nil {
+			currentEntry.Tags = append(currentEntry.Tags, tag)
+		} else {
+
+			if tag.Tag == "EXT-X-INDEPENDENT-SEGMENTS" {
+				playlist.Type = "master"
+			} else if tag.Tag == "EXT-X-MEDIA-SEQUENCE" {
+				playlist.Type = "media"
 			}
 
-			continue
-
+			playlist.Tags = append(playlist.Tags, tag)
 		}
 
-		// Handle URI (must be after EXTINF)
-		if currentEntry != nil {
-			currentEntry.URI = line
-			playlist.Entries = append(playlist.Entries, *currentEntry)
-			currentEntry = nil
-		}
 	}
 
 	if playlist.Version == 0 {

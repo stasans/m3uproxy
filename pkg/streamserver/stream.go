@@ -33,7 +33,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
 
@@ -51,11 +50,6 @@ type Stream struct {
 	forceKodiHeaders bool
 	radio            bool
 	transport        *http.Transport
-}
-
-type LocalStream struct {
-	Stream
-	stream *ffmpeg.HLSStream
 }
 
 type StreamRequestOptions struct {
@@ -77,46 +71,12 @@ var supportedMediaTypes = []contenttype.MediaType{
 	contenttype.NewMediaType("binary/octet-stream"),
 }
 
-func NewImageStream(image, id string) *LocalStream {
-	return &LocalStream{
-		Stream: Stream{
-			mux: &sync.Mutex{},
-		},
-		stream: ffmpeg.GenerateImageHLS(image, id),
-	}
-}
-
-func (stream *LocalStream) Start() error {
-	return stream.stream.Start()
-}
-
-func (stream *LocalStream) Stop() error {
-	return stream.stream.Stop()
-}
-
-func (stream *LocalStream) Cleanup() {
-	stream.stream.Cleanup()
-}
-
-func (stream *LocalStream) Serve(w http.ResponseWriter, r *http.Request) {
-	stream.stream.Serve(w, r)
-}
-
 func (stream *Stream) HealthCheck() {
-
 	resp, err := stream.Get(stream.m3u.URI)
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
-
-	ct := resp.Header.Get("Content-Type")
-	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-	streamActive := err == nil
-
-	if streamActive && (mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl") {
-		streamActive = validateM3UStream(stream, resp)
-	}
 
 	stream.mux.Lock()
 	if resp.Request.URL.String() != stream.m3u.URI {
@@ -127,6 +87,17 @@ func (stream *Stream) HealthCheck() {
 			stream.prefix = ""
 		}
 	}
+	stream.mux.Unlock()
+
+	ct := resp.Header.Get("Content-Type")
+	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
+	streamActive := err == nil
+
+	if streamActive && (mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl") {
+		streamActive = validateM3UStream(stream, resp)
+	}
+
+	stream.mux.Lock()
 	stream.active = streamActive
 	stream.mux.Unlock()
 }
@@ -242,10 +213,8 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", ct)
-	if resp.ContentLength == -1 {
-		w.Header().Set("Transfer-Encoding", "chunked")
-	} else {
-		w.Header().Set("Content-Length", fmt.Sprint(resp.ContentLength))
+	if resp.ContentLength > 0 {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", resp.ContentLength))
 	}
 	io.Copy(w, resp.Body)
 }
@@ -253,7 +222,7 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 func (stream *Stream) Do(method, URI string) (*http.Response, error) {
 
 	client := &http.Client{
-		Timeout:   time.Duration(serverConfig.DefaultTimeout) * time.Second,
+		Timeout:   time.Duration(serverConfig.Timeout) * time.Second,
 		Transport: stream.transport,
 	}
 
@@ -290,7 +259,7 @@ func (stream *Stream) Get(path string) (*http.Response, error) {
 
 func validateM3UStream(stream *Stream, resp *http.Response) bool {
 
-	m3uPlaylist, err := m3uparser.ParseM3U(resp.Body)
+	m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
 	if err != nil {
 		return false
 	}
@@ -342,7 +311,7 @@ func validateM3UStream(stream *Stream, resp *http.Response) bool {
 
 func remapAndServe(resp *http.Response, w http.ResponseWriter) {
 
-	m3uPlaylist, err := m3uparser.ParseM3U(resp.Body)
+	m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -354,11 +323,6 @@ func remapAndServe(resp *http.Response, w http.ResponseWriter) {
 	switch m3uPlaylist.Type {
 	case "master":
 		filePrefix = "master.m3u8"
-		if !m3uPlaylist.Tags.Exist("EXT-X-INDEPENDENT-SEGMENTS") {
-			m3uPlaylist.Tags = append(m3uPlaylist.Tags, m3uparser.M3UTag{
-				Tag: "EXT-X-INDEPENDENT-SEGMENTS", Value: "",
-			})
-		}
 	case "media":
 		filePrefix = "media.ts"
 	default:
@@ -373,5 +337,4 @@ func remapAndServe(resp *http.Response, w http.ResponseWriter) {
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	m3uPlaylist.WriteTo(w)
-
 }

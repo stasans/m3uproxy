@@ -23,10 +23,13 @@ package streamserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,13 +38,14 @@ import (
 	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 
 	"github.com/gorilla/mux"
 )
 
 type StreamServerConfig struct {
 	Playlist       string `json:"playlist"`
-	DefaultTimeout int    `json:"default_timeout,omitempty"`
+	Timeout        int    `json:"default_timeout,omitempty"`
 	NumWorkers     int    `json:"num_workers,omitempty"`
 	NoServiceImage string `json:"no_service_image,omitempty"`
 	ScanTime       int    `json:"scan_time,omitempty"`
@@ -51,9 +55,10 @@ type StreamServerConfig struct {
 }
 
 var (
-	streams      = make([]Stream, 0)
+	streams      = make([]*Stream, 0)
 	streamsMutex sync.Mutex
 	stopServer   = make(chan bool)
+	running      = false
 
 	noServiceStream *LocalStream
 	serverConfig    StreamServerConfig
@@ -62,133 +67,58 @@ var (
 
 const m3uPlaylist = "master.m3u8"
 
-func AddStreams(playlist *m3uparser.M3UPlaylist) error {
+func monitorWorker(stream <-chan *Stream, stop <-chan bool, wg *sync.WaitGroup) {
 
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-
-	streams = make([]Stream, 0)
-
-	for i, entry := range playlist.Entries {
-
-		if entry.URI == "" {
-			continue
-		}
-
-		tvgId := entry.TVGTags.GetValue("tvg-id")
-		radio := entry.TVGTags.GetValue("radio")
-		if tvgId == "" && radio == "" {
-			log.Printf("Missing tvg-id for stream %s\n", entry.URI)
-			continue
-		}
-
-		parsedURL, err := url.Parse(entry.URI)
-		if err != nil {
-			log.Printf("Failed to parse URL: %s\n", entry.URI)
-			continue
-		}
-
-		prefix := ""
-
-		if strings.LastIndex(parsedURL.Path, "/") != -1 {
-			prefix += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
-			prefix = strings.TrimLeft(prefix, "/")
-		}
-
-		proxy := ""
-		m3uproxyTags := entry.SearchTags("M3UPROXYTRANSPORT")
-		if len(m3uproxyTags) > 0 {
-			parts := strings.Split(m3uproxyTags[0].Value, "=")
-			if len(parts) == 2 {
-				switch parts[0] {
-				case "proxy":
-					proxy = parts[1]
-				default:
-					log.Printf("Unknown M3UPROXYTRANSPORT tag: %s\n", parts[0])
-				}
+	defer wg.Done()
+	for s := range stream {
+		select {
+		case <-stop:
+			return
+		default:
+			s.HealthCheck()
+			if !s.active {
+				log.Printf("Stream '%s' is offline.\n", s.m3u.Title)
 			}
 		}
+	}
+}
 
-		transport := http.DefaultTransport.(*http.Transport)
-		if proxy != "" {
-			proxyURL, err := url.Parse(proxy)
-			if err == nil {
-				transport = &http.Transport{
-					Proxy: http.ProxyURL(proxyURL),
-				}
-			}
-		}
+func LoadStreams() error {
 
-		headers := make(map[string]string)
-		m3uproxyTags = entry.SearchTags("M3UPROXYHEADER")
-		for _, tag := range m3uproxyTags {
-			parts := strings.Split(tag.Value, "=")
-			if len(parts) == 2 {
-				headers[parts[0]] = parts[1]
-			}
-		}
-
-		vlcTags := entry.SearchTags("EXTVLCOPT")
-		for _, tag := range vlcTags {
-			parts := strings.Split(tag.Value, "=")
-			if len(parts) == 2 {
-				switch parts[0] {
-				case "http-user-agent":
-					headers["User-Agent"] = parts[1]
-				case "http-referrer":
-					headers["Referer"] = parts[1]
-				default:
-				}
-			}
-		}
-
-		m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
-		forceKodiHeaders := false
-		for _, tag := range m3uproxyTags {
-			switch tag.Value {
-			case "forcekodiheaders":
-				forceKodiHeaders = true
-			default:
-			}
-		}
-
-		// Clear non-standard tags
-		entry.ClearTags()
-
-		stream := Stream{
-			index:            i,
-			m3u:              entry,
-			prefix:           prefix,
-			active:           false,
-			headers:          headers,
-			httpProxy:        proxy,
-			forceKodiHeaders: forceKodiHeaders,
-			radio:            radio == "true",
-			mux:              &sync.Mutex{},
-			transport:        transport,
-		}
-		streams = append(streams, stream)
+	if _, err := os.Stat(serverConfig.Playlist); os.IsNotExist(err) {
+		log.Printf("File %s not found\n", serverConfig.Playlist)
+		return nil
 	}
 
-	return nil
-}
+	extension := filepath.Ext(serverConfig.Playlist)
+	var playlist *m3uparser.M3UPlaylist
+	var err error
+	if extension == ".m3u" {
+		log.Printf("Loading M3U file %s\n", serverConfig.Playlist)
+		playlist, err = m3uparser.ParseM3UFile(serverConfig.Playlist)
+		if err != nil {
+			return err
+		}
+	} else if extension == ".json" {
+		log.Printf("Loading JSON file %s\n", serverConfig.Playlist)
+		playlist, err = m3uprovider.LoadFromFile(serverConfig.Playlist)
+		if err != nil {
+			return err
+		}
+	} else {
+		return errors.New("invalid file extension")
+	}
 
-func StreamCount() int {
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-	return len(streams)
-}
+	if playlist == nil {
+		return errors.New("failed to load playlist")
+	}
 
-func Clear() {
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-	streams = make([]Stream, 0)
-}
+	log.Printf("Loaded %d streams from %s\n", playlist.StreamCount(), serverConfig.Playlist)
 
-func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
+	streamList := make([]*Stream, 0)
 
 	var wg sync.WaitGroup
-	var streamsChan = make(chan int)
+	var streamsChan = make(chan *Stream)
 
 	stopWorkers := make(chan bool)
 	for i := 0; i < serverConfig.NumWorkers; i++ {
@@ -197,30 +127,130 @@ func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
 	}
 
 	go func() {
-		for i := 0; i < len(streams); i++ {
+		for i, entry := range playlist.Entries {
 			select {
-			case <-cancel:
+			case <-stopServer:
 				stopWorkers <- true
-				signal <- true
 				wg.Wait()
 				return
 			default:
-				streamsChan <- i
+				if entry.URI == "" {
+					continue
+				}
+
+				tvgId := entry.TVGTags.GetValue("tvg-id")
+				radio := entry.TVGTags.GetValue("radio")
+				if tvgId == "" && radio == "" {
+					continue
+				}
+
+				parsedURL, err := url.Parse(entry.URI)
+				if err != nil {
+					log.Printf("Failed to parse URL: %s\n", entry.URI)
+					continue
+				}
+
+				prefix := ""
+
+				if strings.LastIndex(parsedURL.Path, "/") != -1 {
+					prefix += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
+					prefix = strings.TrimLeft(prefix, "/")
+				}
+
+				proxy := ""
+				m3uproxyTags := entry.SearchTags("M3UPROXYTRANSPORT")
+				if len(m3uproxyTags) > 0 {
+					parts := strings.Split(m3uproxyTags[0].Value, "=")
+					if len(parts) == 2 {
+						switch parts[0] {
+						case "proxy":
+							proxy = parts[1]
+						default:
+							log.Printf("Unknown M3UPROXYTRANSPORT tag: %s\n", parts[0])
+						}
+					}
+				}
+
+				transport := http.DefaultTransport.(*http.Transport)
+				if proxy != "" {
+					proxyURL, err := url.Parse(proxy)
+					if err == nil {
+						transport = &http.Transport{
+							Proxy: http.ProxyURL(proxyURL),
+						}
+					}
+				}
+
+				headers := make(map[string]string)
+				m3uproxyTags = entry.SearchTags("M3UPROXYHEADER")
+				for _, tag := range m3uproxyTags {
+					parts := strings.Split(tag.Value, "=")
+					if len(parts) == 2 {
+						headers[parts[0]] = parts[1]
+					}
+				}
+
+				vlcTags := entry.SearchTags("EXTVLCOPT")
+				for _, tag := range vlcTags {
+					parts := strings.Split(tag.Value, "=")
+					if len(parts) == 2 {
+						switch parts[0] {
+						case "http-user-agent":
+							headers["User-Agent"] = parts[1]
+						case "http-referrer":
+							headers["Referer"] = parts[1]
+						default:
+						}
+					}
+				}
+
+				m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
+				forceKodiHeaders := false
+				for _, tag := range m3uproxyTags {
+					switch tag.Value {
+					case "forcekodiheaders":
+						forceKodiHeaders = true
+					default:
+					}
+				}
+
+				// Clear non-standard tags
+				entry.ClearTags()
+
+				stream := Stream{
+					index:            i,
+					m3u:              entry,
+					prefix:           prefix,
+					active:           false,
+					headers:          headers,
+					httpProxy:        proxy,
+					forceKodiHeaders: forceKodiHeaders,
+					radio:            radio == "true",
+					mux:              &sync.Mutex{},
+					transport:        transport,
+				}
+
+				streamList = append(streamList, &stream)
+				streamsChan <- &stream
 			}
 		}
 		close(streamsChan)
 	}()
 
 	wg.Wait()
+	log.Printf("Loaded %d active streams\n", len(streamList))
+
+	streamsMutex.Lock()
+	defer streamsMutex.Unlock()
+	streams = streamList
+
+	return nil
 }
 
-func MonitorStreamsNoWorkers() {
-	for i := 0; i < len(streams); i++ {
-		streams[i].HealthCheck()
-		if !streams[i].active {
-			log.Printf("Stream '%s' is offline.\n", streams[i].m3u.Title)
-		}
-	}
+func StreamCount() int {
+	streamsMutex.Lock()
+	defer streamsMutex.Unlock()
+	return len(streams)
 }
 
 func Start(data json.RawMessage) {
@@ -235,8 +265,8 @@ func Start(data json.RawMessage) {
 	log.Printf("Playlist: %s\n", serverConfig.Playlist)
 	log.Printf("No Service: %s\n", serverConfig.NoServiceImage)
 
-	if serverConfig.DefaultTimeout < 1 {
-		serverConfig.DefaultTimeout = 3
+	if serverConfig.Timeout < 1 {
+		serverConfig.Timeout = 3
 	}
 	if serverConfig.NumWorkers < 1 {
 		serverConfig.NumWorkers = 1
@@ -260,21 +290,23 @@ func Start(data json.RawMessage) {
 		noServiceStream = nil
 	}
 
-	quit := make(chan bool)
 	updateTimer = time.NewTimer(time.Duration(serverConfig.ScanTime) * time.Second)
+	running = true
 	go func() {
-		updatePlaylistAndMonitor(serverConfig, stopServer, quit)
+		LoadStreams()
 		for {
 			select {
-			case <-quit:
-				log.Println("Stopping stream server")
-				return
 			case <-stopServer:
 				log.Println("Stopping stream server")
 				return
 			case <-updateTimer.C:
-				updatePlaylistAndMonitor(serverConfig, stopServer, quit)
-				updateTimer.Reset(time.Duration(serverConfig.ScanTime) * time.Second)
+				LoadStreams()
+				if running {
+					updateTimer.Reset(time.Duration(serverConfig.ScanTime) * time.Second)
+				}
+			}
+			if !running {
+				break
 			}
 		}
 	}()
@@ -288,6 +320,7 @@ func Shutdown() {
 		noServiceStream.Cleanup()
 	}
 	updateTimer.Stop()
+	running = false
 	stopServer <- true
 	log.Printf("Stream server stopped\n")
 }
@@ -318,6 +351,11 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 
 	streamsMutex.Lock()
 	defer streamsMutex.Unlock()
+
+	if streamID < 0 || streamID >= len(streams) {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
 
 	stream := streams[streamID]
 	if !stream.active {
