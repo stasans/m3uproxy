@@ -206,10 +206,13 @@ func LoadStreams() error {
 
 				m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
 				forceKodiHeaders := false
+				disableRemap := false
 				for _, tag := range m3uproxyTags {
 					switch tag.Value {
 					case "forcekodiheaders":
 						forceKodiHeaders = true
+					case "disableremap":
+						disableRemap = true
 					default:
 					}
 				}
@@ -228,6 +231,7 @@ func LoadStreams() error {
 					radio:            radio == "true",
 					mux:              &sync.Mutex{},
 					transport:        transport,
+					disableRemap:     disableRemap,
 				}
 
 				streamList = append(streamList, &stream)
@@ -403,8 +407,13 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 			protocol = "https"
 		}
 
+		uri := fmt.Sprintf("%s://%s/%s/%d/%s", protocol, r.Host, token, i, m3uPlaylist)
+		if stream.disableRemap {
+			uri = stream.m3u.URI
+		}
+
 		entry := m3uparser.M3UEntry{
-			URI:   fmt.Sprintf("%s://%s/%s/%d/%s", protocol, r.Host, token, i, m3uPlaylist),
+			URI:   uri,
 			Title: stream.m3u.Title,
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}

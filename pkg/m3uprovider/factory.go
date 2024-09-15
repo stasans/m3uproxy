@@ -40,6 +40,7 @@ type OverrideEntry struct {
 	Disabled         bool              `json:"disabled,omitempty"`
 	HttpProxy        string            `json:"http_proxy,omitempty"`
 	ForceKodiHeaders bool              `json:"kodi,omitempty"`
+	DisableRemap     bool              `json:"disable_remap,omitempty"`
 }
 
 type ProviderConfig struct {
@@ -98,13 +99,13 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 		for _, entry := range playlist.Entries {
 			tvgId := entry.TVGTags.GetValue("tvg-id")
 			if tvgId == "" {
-				masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
-				continue
+				tvgId = entry.Title
 			}
 			if masterPlaylist.SearchEntryByTvgTag("tvg-id", tvgId) != nil {
 				log.Printf("Duplicate entry: '%s', skipping.", entry.Title)
 				continue
 			}
+
 			override, ok := config.Overrides[tvgId]
 			if ok && override.Disabled {
 				log.Printf("Channel '%s' is disabled, skipping.", entry.Title)
@@ -134,6 +135,12 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 				entry.Tags = append(entry.Tags, m3uparser.M3UTag{
 					Tag:   "M3UPROXYOPT",
 					Value: "forcekodiheaders",
+				})
+			}
+			if ok && override.DisableRemap {
+				entry.Tags = append(entry.Tags, m3uparser.M3UTag{
+					Tag:   "M3UPROXYOPT",
+					Value: "disableremap",
 				})
 			}
 			masterPlaylist.Entries = append(masterPlaylist.Entries, entry)

@@ -50,6 +50,7 @@ type Stream struct {
 	forceKodiHeaders bool
 	radio            bool
 	transport        *http.Transport
+	disableRemap     bool
 }
 
 type StreamRequestOptions struct {
