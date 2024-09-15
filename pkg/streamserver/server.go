@@ -55,14 +55,12 @@ var (
 	streamsMutex sync.Mutex
 	stopServer   = make(chan bool)
 
-	noServiceStream *ffmpeg.HLSStream
+	noServiceStream *LocalStream
 	serverConfig    StreamServerConfig
 	updateTimer     *time.Timer
 )
 
-const m3uInternalPath = "m3uproxy/streams"
-const m3uProxyPath = "m3uproxy/proxy"
-const m3uPlaylist = "m3uproxy.m3u8"
+const m3uPlaylist = "master.m3u8"
 
 func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 
@@ -94,6 +92,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 
 		if strings.LastIndex(parsedURL.Path, "/") != -1 {
 			prefix += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
+			prefix = strings.TrimLeft(prefix, "/")
 		}
 
 		proxy := ""
@@ -110,6 +109,16 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			}
 		}
 
+		transport := http.DefaultTransport.(*http.Transport)
+		if proxy != "" {
+			proxyURL, err := url.Parse(proxy)
+			if err == nil {
+				transport = &http.Transport{
+					Proxy: http.ProxyURL(proxyURL),
+				}
+			}
+		}
+
 		headers := make(map[string]string)
 		m3uproxyTags = entry.SearchTags("M3UPROXYHEADER")
 		for _, tag := range m3uproxyTags {
@@ -118,6 +127,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 				headers[parts[0]] = parts[1]
 			}
 		}
+
 		vlcTags := entry.SearchTags("EXTVLCOPT")
 		for _, tag := range vlcTags {
 			parts := strings.Split(tag.Value, "=")
@@ -155,6 +165,7 @@ func AddStreams(playlist *m3uparser.M3UPlaylist) error {
 			forceKodiHeaders: forceKodiHeaders,
 			radio:            radio == "true",
 			mux:              &sync.Mutex{},
+			transport:        transport,
 		}
 		streams = append(streams, stream)
 	}
@@ -182,7 +193,7 @@ func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
 	stopWorkers := make(chan bool)
 	for i := 0; i < serverConfig.NumWorkers; i++ {
 		wg.Add(1)
-		go monitorWorker(streamsChan, stopWorkers, &wg, serverConfig.DefaultTimeout)
+		go monitorWorker(streamsChan, stopWorkers, &wg)
 	}
 
 	go func() {
@@ -205,7 +216,7 @@ func MonitorStreams(cancel <-chan bool, signal chan<- bool) {
 
 func MonitorStreamsNoWorkers() {
 	for i := 0; i < len(streams); i++ {
-		streams[i].HealthCheck(serverConfig.DefaultTimeout)
+		streams[i].HealthCheck()
 		if !streams[i].active {
 			log.Printf("Stream '%s' is offline.\n", streams[i].m3u.Title)
 		}
@@ -242,7 +253,7 @@ func Start(data json.RawMessage) {
 
 	// Start the no service stream
 	log.Printf("Generating HLS for no service image\n")
-	noServiceStream = ffmpeg.GenerateImageHLS(serverConfig.NoServiceImage, "no_service")
+	noServiceStream = NewImageStream(serverConfig.NoServiceImage, "no_service")
 
 	if err := noServiceStream.Start(); err != nil {
 		log.Fatalf("Failed to start no service stream: %v\n", err)
@@ -282,8 +293,7 @@ func Shutdown() {
 }
 
 func Routes(next *mux.Router) http.Handler {
-	next.HandleFunc("/"+m3uInternalPath+"/{path:.*}", handleInternalStream)
-	next.HandleFunc("/"+m3uProxyPath+"/{token}/{streamId}/{path:.*}", handleStreamRequest)
+	next.HandleFunc("/{token}/{streamId}/{path:.*}", handleStreamRequest)
 	next.HandleFunc("/streams.m3u", handleStreamPlaylist)
 	return next
 }
@@ -302,35 +312,19 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 
 	streamID, err := strconv.Atoi(vars["streamId"])
 	if err != nil {
-		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
 		return
 	}
+
+	streamsMutex.Lock()
+	defer streamsMutex.Unlock()
 
 	stream := streams[streamID]
-	stream.mux.Lock()
 	if !stream.active {
-		log.Printf("Error serving stream stream: %v\n", err)
-		http.Redirect(w, r, "/"+m3uInternalPath+"/no_service/index.m3u8", http.StatusMovedPermanently)
-		stream.mux.Unlock()
-		return
-	}
-	stream.mux.Unlock()
-	stream.Serve(w, r)
-}
-
-func handleInternalStream(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	path := vars["path"]
-	if strings.HasPrefix(path, "no_service") {
-		if noServiceStream == nil {
-			http.NotFound(w, r)
-			return
-		}
 		noServiceStream.Serve(w, r)
 		return
 	}
-
-	http.NotFound(w, r)
+	stream.Serve(w, r)
 }
 
 func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +366,7 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		}
 
 		entry := m3uparser.M3UEntry{
-			URI:   fmt.Sprintf("%s://%s/%s/%s/%d/%s", protocol, r.Host, m3uProxyPath, token, i, m3uPlaylist),
+			URI:   fmt.Sprintf("%s://%s/%s/%d/%s", protocol, r.Host, token, i, m3uPlaylist),
 			Title: stream.m3u.Title,
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}

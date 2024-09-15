@@ -22,7 +22,7 @@ THE SOFTWARE.
 package streamserver
 
 import (
-	"bufio"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -33,8 +33,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/grafov/m3u8"
+	"github.com/elnormous/contenttype"
 
 	"github.com/gorilla/mux"
 )
@@ -49,6 +50,12 @@ type Stream struct {
 	httpProxy        string
 	forceKodiHeaders bool
 	radio            bool
+	transport        *http.Transport
+}
+
+type LocalStream struct {
+	Stream
+	stream *ffmpeg.HLSStream
 }
 
 type StreamRequestOptions struct {
@@ -57,41 +64,58 @@ type StreamRequestOptions struct {
 	Method string
 }
 
-func (stream *Stream) resolveRequest(opts StreamRequestOptions) string {
-	streamURL, _ := url.Parse(stream.m3u.URI)
-	if opts.Path != m3uPlaylist {
-		if stream.prefix != "" {
-			streamURL.Path = stream.prefix + "/" + opts.Path
-		} else {
-			streamURL.Path = opts.Path
-		}
-		if opts.Query != "" {
-			streamURL.RawQuery = opts.Query
-		}
-	}
-	return streamURL.String()
+var supportedMediaTypes = []contenttype.MediaType{
+	contenttype.NewMediaType("application/vnd.apple.mpegurl"),
+	contenttype.NewMediaType("application/x-mpegurl"),
+	contenttype.NewMediaType("audio/x-mpegurl"),
+	contenttype.NewMediaType("audio/mpeg"),
+	contenttype.NewMediaType("audio/aacp"),
+	contenttype.NewMediaType("audio/aac"),
+	contenttype.NewMediaType("audio/mp4"),
+	contenttype.NewMediaType("audio/x-aac"),
+	contenttype.NewMediaType("video/mp2t"),
+	contenttype.NewMediaType("binary/octet-stream"),
 }
 
-func (stream *Stream) generateHttpRequest(opts StreamRequestOptions) (*http.Request, error) {
-
-	streamUrl := stream.resolveRequest(opts)
-	req, err := http.NewRequest(opts.Method, streamUrl, nil)
-	if err != nil {
-		return nil, err
+func NewImageStream(image, id string) *LocalStream {
+	return &LocalStream{
+		Stream: Stream{
+			mux: &sync.Mutex{},
+		},
+		stream: ffmpeg.GenerateImageHLS(image, id),
 	}
-
-	for key, value := range stream.headers {
-		req.Header.Add(key, value)
-	}
-
-	return req, nil
 }
 
-func (stream *Stream) HealthCheck(timeout int) {
+func (stream *LocalStream) Start() error {
+	return stream.stream.Start()
+}
 
-	resp, err := stream.Get(m3uPlaylist, timeout)
+func (stream *LocalStream) Stop() error {
+	return stream.stream.Stop()
+}
+
+func (stream *LocalStream) Cleanup() {
+	stream.stream.Cleanup()
+}
+
+func (stream *LocalStream) Serve(w http.ResponseWriter, r *http.Request) {
+	stream.stream.Serve(w, r)
+}
+
+func (stream *Stream) HealthCheck() {
+
+	resp, err := stream.Get(stream.m3u.URI)
 	if err != nil {
 		return
+	}
+	defer resp.Body.Close()
+
+	ct := resp.Header.Get("Content-Type")
+	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
+	streamActive := err == nil
+
+	if streamActive && (mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl") {
+		streamActive = validateM3UStream(stream, resp)
 	}
 
 	stream.mux.Lock()
@@ -103,19 +127,6 @@ func (stream *Stream) HealthCheck(timeout int) {
 			stream.prefix = ""
 		}
 	}
-	stream.mux.Unlock()
-
-	streamActive := true
-	switch getContentType(resp) {
-	case "application/vnd.apple.mpegurl":
-		fallthrough
-	case "application/x-mpegurl":
-		streamActive = stream.validateM3UStream(resp)
-	default:
-		streamActive = true
-	}
-
-	stream.mux.Lock()
 	stream.active = streamActive
 	stream.mux.Unlock()
 }
@@ -123,17 +134,114 @@ func (stream *Stream) HealthCheck(timeout int) {
 func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
-	path := vars["path"]
 
-	resp, err := stream.Get(path, serverConfig.DefaultTimeout)
+	streamURL, _ := url.Parse(stream.m3u.URI)
+	uri := url.URL{
+		Scheme: streamURL.Scheme,
+		Host:   streamURL.Host,
+	}
+
+	switch vars["path"] {
+	case "master.m3u8":
+
+		cache := r.URL.Query().Get("cache")
+		if cache != "" {
+			originalUrlBytes, err := base64.URLEncoding.DecodeString(cache)
+
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			org, err := url.Parse(string(originalUrlBytes))
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			uri.RawQuery = org.RawQuery
+
+			if org.Scheme != "" {
+				uri.Scheme = org.Scheme
+				uri.Host = org.Host
+				uri.Path = org.Path
+			} else {
+				if stream.prefix != "" && !strings.HasPrefix(org.Path, "/") {
+					uri.Path = stream.prefix + "/" + org.Path
+				} else {
+					uri.Path = org.Path
+				}
+			}
+
+		} else {
+			uri.RawQuery = streamURL.RawQuery
+			uri.Path = streamURL.Path
+		}
+	case "media.ts":
+		cache := r.URL.Query().Get("cache")
+		if cache == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		originalUrlBytes, err := base64.URLEncoding.DecodeString(cache)
+
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		org, err := url.Parse(string(originalUrlBytes))
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		uri.RawQuery = org.RawQuery
+
+		if org.Scheme != "" {
+			uri.Scheme = org.Scheme
+			uri.Host = org.Host
+			uri.Path = org.Path
+		} else {
+			if stream.prefix != "" && !strings.HasPrefix(org.Path, "/") {
+				uri.Path = stream.prefix + "/" + org.Path
+			} else {
+				uri.Path = org.Path
+			}
+		}
+
+	default:
+
+		uri.RawQuery = r.URL.RawQuery
+
+		if stream.prefix != "" {
+			uri.Path = stream.prefix + "/" + vars["path"]
+		} else {
+			uri.Path = vars["path"]
+		}
+	}
+
+	path := uri.String()
+	resp, err := stream.Get(path)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
-	contentType := getContentType(resp)
+	ct := resp.Header.Get("Content-Type")
+	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
+	if err != nil {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
 
-	w.Header().Set("Content-Type", contentType)
+	if mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl" {
+		remapAndServe(resp, w)
+		return
+	}
+
+	w.Header().Set("Content-Type", ct)
 	if resp.ContentLength == -1 {
 		w.Header().Set("Transfer-Encoding", "chunked")
 	} else {
@@ -142,57 +250,21 @@ func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, resp.Body)
 }
 
-func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
-
-	stream.mux.Lock()
-
-	transport := http.DefaultTransport.(*http.Transport)
-	if stream.httpProxy != "" {
-		proxyURL, err := url.Parse(stream.httpProxy)
-		if err == nil {
-			transport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-		}
-	}
+func (stream *Stream) Do(method, URI string) (*http.Response, error) {
 
 	client := &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
-		Transport: transport,
+		Timeout:   time.Duration(serverConfig.DefaultTimeout) * time.Second,
+		Transport: stream.transport,
 	}
 
-	uri, err := url.Parse(URI)
+	req, err := http.NewRequest(method, URI, nil)
 	if err != nil {
-		stream.mux.Unlock()
 		return nil, err
 	}
 
-	if uri.Scheme != "" {
-		stream.mux.Unlock()
-		resp, err := client.Get(URI)
-		if err != nil {
-			return nil, err
-		}
-		return resp, nil
+	for key, value := range stream.headers {
+		req.Header.Add(key, value)
 	}
-
-	opts := StreamRequestOptions{
-		Path:   m3uPlaylist,
-		Method: "GET",
-	}
-
-	if uri.Path != m3uPlaylist {
-		opts.Path = uri.Path
-		opts.Query = uri.RawQuery
-	}
-
-	req, err := stream.generateHttpRequest(opts)
-
-	if err != nil {
-		stream.mux.Unlock()
-		return nil, err
-	}
-	stream.mux.Unlock()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -208,72 +280,98 @@ func (stream *Stream) Get(URI string, timeout int) (*http.Response, error) {
 		return nil, errors.New("no content")
 	}
 
-	switch getContentType(resp) {
-	case "application/vnd.apple.mpegurl":
-		fallthrough
-	case "application/x-mpegurl":
-		fallthrough
-	case "audio/x-mpegurl":
-		fallthrough
-	case "audio/mpeg":
-		fallthrough
-	case "audio/aacp":
-		fallthrough
-	case "audio/aac":
-		fallthrough
-	case "audio/mp4":
-		fallthrough
-	case "audio/x-aac":
-		fallthrough
-	case "video/mp2t":
-		fallthrough
-	case "binary/octet-stream":
-		return resp, nil
-	default:
-		return nil, errors.New("invalid content type")
-	}
+	return resp, nil
 }
 
-func (stream *Stream) validateM3UStream(resp *http.Response) bool {
+func (stream *Stream) Get(path string) (*http.Response, error) {
+	resp, err := stream.Do("GET", path)
+	return resp, err
+}
 
-	p, listType, err := m3u8.DecodeWith(bufio.NewReader(resp.Body), true, []m3u8.CustomDecoder{})
+func validateM3UStream(stream *Stream, resp *http.Response) bool {
+
+	m3uPlaylist, err := m3uparser.ParseM3U(resp.Body)
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
 
-	switch listType {
-	case m3u8.MASTER:
-
-		playlist := p.(*m3u8.MasterPlaylist)
-		if playlist == nil {
-			return false
-		}
-
-		if len(playlist.Variants) == 0 {
-			return false
-		}
-
-		resp, err := stream.Get(playlist.Variants[0].URI, serverConfig.DefaultTimeout)
-		if err != nil {
-			return false
-		}
-
-		return stream.validateM3UStream(resp)
-
-	case m3u8.MEDIA:
-		mediaPlaylist := p.(*m3u8.MediaPlaylist)
-		segment := mediaPlaylist.Segments[0]
-		if segment == nil {
-			return false
-		}
-		_, err := stream.Get(segment.URI, serverConfig.DefaultTimeout)
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		return err == nil
-	default:
-		log.Printf("Unknown m3u8 playlist type: %v\n", listType)
+	if len(m3uPlaylist.Entries) == 0 {
 		return false
 	}
+
+	streamURL, _ := url.Parse(stream.m3u.URI)
+	uri := url.URL{
+		Scheme: streamURL.Scheme,
+		Host:   streamURL.Host,
+	}
+
+	r, _ := url.Parse(m3uPlaylist.Entries[0].URI)
+
+	if r.Scheme != "" {
+		uri.Scheme = r.Scheme
+		uri.Host = r.Host
+		uri.Path = r.Path
+		uri.RawQuery = r.RawQuery
+	} else {
+		uri.RawQuery = r.RawQuery
+
+		if stream.prefix != "" && !strings.HasPrefix(r.Path, "/") {
+			uri.Path = stream.prefix + "/" + r.Path
+		} else {
+			uri.Path = r.Path
+		}
+	}
+
+	streamResponse, err := stream.Get(uri.String())
+	if err != nil {
+		return false
+	}
+	defer streamResponse.Body.Close()
+	ct := streamResponse.Header.Get("Content-Type")
+	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
+	if err != nil {
+		return false
+	}
+
+	if mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl" {
+		return validateM3UStream(stream, streamResponse)
+	}
+
+	return true
+}
+
+func remapAndServe(resp *http.Response, w http.ResponseWriter) {
+
+	m3uPlaylist, err := m3uparser.ParseM3U(resp.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	resp.Body.Close()
+
+	var filePrefix string
+
+	switch m3uPlaylist.Type {
+	case "master":
+		filePrefix = "master.m3u8"
+		if !m3uPlaylist.Tags.Exist("EXT-X-INDEPENDENT-SEGMENTS") {
+			m3uPlaylist.Tags = append(m3uPlaylist.Tags, m3uparser.M3UTag{
+				Tag: "EXT-X-INDEPENDENT-SEGMENTS", Value: "",
+			})
+		}
+	case "media":
+		filePrefix = "media.ts"
+	default:
+		log.Printf("Unknown m3u8 playlist type: %v\n", m3uPlaylist.Type)
+		return
+	}
+
+	for i, _ := range m3uPlaylist.Entries {
+		remap := fmt.Sprintf("%s?cache=%s", filePrefix, base64.URLEncoding.EncodeToString([]byte(m3uPlaylist.Entries[i].URI)))
+		m3uPlaylist.Entries[i].URI = remap
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	m3uPlaylist.WriteTo(w)
 
 }

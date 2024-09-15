@@ -23,6 +23,7 @@ package m3uparser
 
 import (
 	"errors"
+	"io"
 	"strings"
 )
 
@@ -53,8 +54,24 @@ func (entry *M3UEntry) String() string {
 	return strings.Trim(result, "\n")
 }
 
+func (entry *M3UEntry) WriteTo(w io.Writer) (int64, error) {
+
+	n := 0
+	for _, tag := range entry.Tags {
+		nBytes, _ := w.Write([]byte("#" + tag.Tag + ":" + tag.Value + "\n"))
+		n += nBytes
+	}
+	nBytes, _ := w.Write([]byte(entry.URI + "\n"))
+	n += nBytes
+	return int64(n), nil
+}
+
 // parseTag parses a line that starts with '#' and extracts the tag name and value.
 func parseTag(line string) (M3UTag, error) {
+	if strings.HasPrefix(line, "#EXTM3U") {
+		return M3UTag{"EXTM3U", ""}, nil
+	}
+
 	line = strings.TrimPrefix(line, "#")
 	parts := strings.SplitN(line, ":", 2)
 	if len(parts) == 0 {
@@ -76,6 +93,15 @@ func (tags M3UTags) GetValue(tag string) string {
 		}
 	}
 	return ""
+}
+
+func (tags M3UTags) Exist(tag string) bool {
+	for _, tags := range tags {
+		if tags.Tag == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func (entry *M3UEntry) SearchTags(tag string) []M3UTag {

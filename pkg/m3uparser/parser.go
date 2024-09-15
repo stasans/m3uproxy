@@ -22,7 +22,8 @@ THE SOFTWARE.
 package m3uparser
 
 import (
-	"bufio"
+	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -88,10 +89,8 @@ func contains(slice []string, item string) bool {
 	return false
 }
 
-// ParseM3UFile reads an M3U file and returns a parsed M3UPlaylist.
 func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
-
-	var scanner *bufio.Scanner
+	var reader io.ReadCloser
 
 	if strings.HasPrefix(filePath, "http://") || strings.HasPrefix(filePath, "https://") {
 		// Load content from URL
@@ -102,7 +101,7 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 
 		defer resp.Body.Close()
 
-		scanner = bufio.NewScanner(resp.Body)
+		reader = resp.Body
 
 	} else {
 
@@ -114,18 +113,59 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 
 		defer file.Close()
 
-		scanner = bufio.NewScanner(file)
+		reader = file
 	}
+
+	return ParseM3U(reader)
+}
+
+func readString(buf io.ReadCloser) (string, error) {
+	var content string
+
+	b := make([]byte, 1)
+	for {
+		// Read line
+		_, err := buf.Read(b)
+		if err != nil {
+			if err == io.EOF {
+				return content, err
+			}
+			return "", err
+		}
+		if b[0] == '\n' {
+			break
+		}
+		content += string(b)
+	}
+
+	return content, nil
+}
+
+// ParseM3UFile reads an M3U file and returns a parsed M3UPlaylist.
+
+func ParseM3U(buf io.ReadCloser) (*M3UPlaylist, error) {
 
 	playlist := &M3UPlaylist{
-		Version: M3U8Version3, // Default M3U8 version
+		Version: 0, // Default M3U8 version
 		Entries: make([]M3UEntry, 0),
 		Tags:    make([]M3UTag, 0),
+		Type:    "master",
 	}
 
+	// Read all content from buf
 	var currentEntry *M3UEntry
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+
+	for {
+		// Read line
+		line, err := readString(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+
+		line = strings.TrimSpace(line)
 		if len(line) == 0 {
 			// Ignore empty lines and comments that aren't tags
 			continue
@@ -145,7 +185,6 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 			}
 
 			if tag.Tag == "EXTM3U" {
-
 				playlist.Version = M3U8Version3
 				continue
 			}
@@ -158,7 +197,9 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 				parts := strings.SplitN(line[8:], ",", 2)
 				if len(parts) > 0 {
 					currentEntry.Duration = parseDuration(parts[0])
-					currentEntry.TVGTags = ParseTVGTags(parts[0][2:])
+					if currentEntry.Duration == -1 {
+						currentEntry.TVGTags = ParseTVGTags(parts[0][2:])
+					}
 				} else {
 					currentEntry.Duration = -1
 				}
@@ -178,10 +219,18 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 			if currentEntry != nil {
 				currentEntry.Tags = append(currentEntry.Tags, tag)
 			} else {
+
+				if tag.Tag == "EXT-X-INDEPENDENT-SEGMENTS" {
+					playlist.Type = "master"
+				} else if tag.Tag == "EXT-X-MEDIA-SEQUENCE" {
+					playlist.Type = "media"
+				}
+
 				playlist.Tags = append(playlist.Tags, tag)
 			}
 
 			continue
+
 		}
 
 		// Handle URI (must be after EXTINF)
@@ -192,8 +241,8 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	if playlist.Version == 0 {
+		return nil, errors.New("invalid M3U file")
 	}
 
 	return playlist, nil
