@@ -157,16 +157,21 @@ func assertM3UHeader(buf io.Reader) error {
 
 func processLine(buf io.Reader) (M3UTag, string, error) {
 
+	eof := false
 	for {
 		// Read line
 		line, err := readString(buf)
-		if err != nil {
+		eof = err == io.EOF
+		if err != nil && !eof {
 			return M3UTag{}, "", err
 		}
 
 		line = strings.TrimSpace(line)
 		if len(line) == 0 {
 			// Ignore empty lines and comments that aren't tags
+			if eof {
+				return M3UTag{}, "", io.EOF
+			}
 			continue
 		}
 
@@ -177,11 +182,17 @@ func processLine(buf io.Reader) (M3UTag, string, error) {
 		tag, err := parseTag(line)
 		if err != nil {
 			// Ignore invalid tags or comments
+			if eof {
+				return M3UTag{}, "", io.EOF
+			}
 			continue
 		}
 
 		if !contains(M3U8Directives, tag.Tag) {
 			// Ignore unknown tags
+			if eof {
+				return M3UTag{}, "", io.EOF
+			}
 			continue
 		}
 

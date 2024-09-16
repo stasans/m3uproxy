@@ -27,7 +27,6 @@ import (
 )
 
 type Config struct {
-	Epg          string          `json:"epg"`
 	Port         int             `json:"port"`
 	LogFile      string          `json:"log_file,omitempty"`
 	StreamServer json.RawMessage `json:"stream_server"`

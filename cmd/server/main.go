@@ -53,7 +53,6 @@ var serverCmd = &cobra.Command{
 		setupLogging(config)
 
 		log.Printf("Starting M3U Proxy Server\n")
-		log.Printf("EPG: %s\n", config.Epg)
 
 		err = auth.InitializeAuth(config.Auth)
 		if err != nil {
@@ -69,11 +68,9 @@ var serverCmd = &cobra.Command{
 			log.Println("GeoIP database not found, geo-location will not be available.")
 		}
 
-		streamserver.Start(config.StreamServer)
-
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", config.Port),
-			Handler: geoip(routes(config)),
+			Handler: geoip(streamserver.Start(config.StreamServer)),
 		}
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)

@@ -45,6 +45,7 @@ import (
 
 type StreamServerConfig struct {
 	Playlist       string `json:"playlist"`
+	Epg            string `json:"epg"`
 	Timeout        int    `json:"default_timeout,omitempty"`
 	NumWorkers     int    `json:"num_workers,omitempty"`
 	NoServiceImage string `json:"no_service_image,omitempty"`
@@ -66,22 +67,6 @@ var (
 )
 
 const m3uPlaylist = "master.m3u8"
-
-func monitorWorker(stream <-chan *Stream, stop <-chan bool, wg *sync.WaitGroup) {
-
-	defer wg.Done()
-	for s := range stream {
-		select {
-		case <-stop:
-			return
-		default:
-			s.HealthCheck()
-			if !s.active {
-				log.Printf("Stream '%s' is offline.\n", s.m3u.Title)
-			}
-		}
-	}
-}
 
 func LoadStreams() error {
 
@@ -144,19 +129,6 @@ func LoadStreams() error {
 					continue
 				}
 
-				parsedURL, err := url.Parse(entry.URI)
-				if err != nil {
-					log.Printf("Failed to parse URL: %s\n", entry.URI)
-					continue
-				}
-
-				prefix := ""
-
-				if strings.LastIndex(parsedURL.Path, "/") != -1 {
-					prefix += parsedURL.Path[:strings.LastIndex(parsedURL.Path, "/")]
-					prefix = strings.TrimLeft(prefix, "/")
-				}
-
 				proxy := ""
 				m3uproxyTags := entry.SearchTags("M3UPROXYTRANSPORT")
 				if len(m3uproxyTags) > 0 {
@@ -204,6 +176,10 @@ func LoadStreams() error {
 					}
 				}
 
+				if headers["User-Agent"] == "" {
+					headers["User-Agent"] = "VLC/3.0.11 LibVLC/3.0.11"
+				}
+
 				m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
 				forceKodiHeaders := false
 				disableRemap := false
@@ -223,7 +199,6 @@ func LoadStreams() error {
 				stream := Stream{
 					index:            i,
 					m3u:              entry,
-					prefix:           prefix,
 					active:           false,
 					headers:          headers,
 					httpProxy:        proxy,
@@ -251,23 +226,18 @@ func LoadStreams() error {
 	return nil
 }
 
-func StreamCount() int {
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-	return len(streams)
-}
-
-func Start(data json.RawMessage) {
+func Start(data json.RawMessage) http.Handler {
 
 	err := json.Unmarshal(data, &serverConfig)
 	if err != nil {
 		log.Printf("Failed to parse stream server configuration: %s\n", err)
-		return
+		return nil
 	}
 
 	log.Printf("Starting stream server\n")
 	log.Printf("Playlist: %s\n", serverConfig.Playlist)
 	log.Printf("No Service: %s\n", serverConfig.NoServiceImage)
+	log.Printf("EPG: %s\n", serverConfig.Epg)
 
 	if serverConfig.Timeout < 1 {
 		serverConfig.Timeout = 3
@@ -314,6 +284,19 @@ func Start(data json.RawMessage) {
 			}
 		}
 	}()
+
+	handler := mux.NewRouter()
+	// Streams and EPG endpoints
+	handler.HandleFunc("/{token}/{streamId}/{path:.*}", handleGetStream)
+	handler.HandleFunc("/epg.xml", handleGetEpg)
+	handler.HandleFunc("/streams.m3u", handleGetPlaylist)
+	handler.HandleFunc("/player", handlerGetPlayer)
+	// Health check endpoint
+	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	return handler
 }
 
 func Shutdown() {
@@ -329,13 +312,12 @@ func Shutdown() {
 	log.Printf("Stream server stopped\n")
 }
 
-func Routes(next *mux.Router) http.Handler {
-	next.HandleFunc("/{token}/{streamId}/{path:.*}", handleStreamRequest)
-	next.HandleFunc("/streams.m3u", handleStreamPlaylist)
-	return next
-}
+func handleGetStream(w http.ResponseWriter, r *http.Request) {
 
-func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	vars := mux.Vars(r)
 	token := vars["token"]
@@ -369,7 +351,12 @@ func handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	stream.Serve(w, r)
 }
 
-func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
+func handleGetPlaylist(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
 	token, ok := getJWTToken(r)
 	if !ok {
@@ -426,4 +413,42 @@ func handleStreamPlaylist(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write([]byte(entry.String() + "\n"))
 	}
+}
+
+func handleGetEpg(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	content, err := loadContent(serverConfig.Epg)
+	if err != nil {
+		http.Error(w, "EPG file not found", http.StatusNotFound)
+		log.Printf("EPG file not found at %s\n", serverConfig.Epg)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
+}
+
+func handlerGetPlayer(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	content, err := loadContent("assets/player.html")
+	if err != nil {
+		http.Error(w, "Player file not found", http.StatusNotFound)
+		log.Printf("Player file not found at %s\n", "player.html")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
 }

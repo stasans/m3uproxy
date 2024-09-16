@@ -22,7 +22,7 @@
 - **Access**: Public.
 - **Usage**: Useful for clients that support EPGs to fetch the program guide associated with the streams.
 
-### `/m3uproxy/proxy/{token}/{streamId}/*`
+### `/{token}/{streamId}/*`
 - **Description**: Proxies the HLS stream for the specified stream.
 - **Access**: Token-based access control.
 - **Parameters**:
@@ -30,10 +30,20 @@
   - `streamId`: The identifier of the stream.
 - **Usage**: Used by clients to access the actual HLS stream. Replace `{token}` and `{streamId}` with valid values.
 
-### `/m3uproxy/streams/*`
-- **Description**: Streams a "stream unavailable" message. (FFMPEG > 5.0 must be installed)
-- **Access**: Internal use only.
-- **Usage**: Automatically redirected when a stream is unavailable or an error occurs.
+### `/health`
+- **Description**: Health check endpoint.
+- **Access**: Public.
+- **Usage**: Used to check the health of the server.
+
+### `/player`
+- **Description**: Serve a simple HTML player to play the streams.
+- **Access**: Public.
+- **Usage**: Used to check the health of the server.
+
+## Geo-Blocking
+
+`m3uproxy` supports geo-blocking of streams based on the client's IP address. This feature can be enabled by providing a list of allowed countries in the configuration file.
+
 
 ## Installation
 
@@ -55,7 +65,7 @@ To install `m3uproxy`, you need to have [Go](https://golang.org/) installed on y
 3. Run the server:
 
    ```bash
-   ./m3uproxy server start -m <m3u file> -e <epg file> -u <users file> -p <port>
+   ./m3uproxy server -c config.json
    ```
 
 
@@ -68,7 +78,7 @@ To install `m3uproxy`, you need to have [Go](https://golang.org/) installed on y
 To add a user, run:
 
 ```bash
-./m3uproxy users add -u <users file> <username> <password>
+./m3uproxy users add -c <config_file> <username> <password>
 ```
 
 ### Removing a User
@@ -76,7 +86,7 @@ To add a user, run:
 To remove a user, run:
 
 ```bash
-./m3uproxy users remove -u <users file> <username>
+./m3uproxy users remove -c <config_file> <username>
 ```
 
 ### Modifying a User
@@ -84,7 +94,7 @@ To remove a user, run:
 To modify a user's password, run:
 
 ```bash
-./m3uproxy users password -u <users file> <username> <newpassword>
+./m3uproxy users password -c <config_file> <username> <newpassword>
 ```
 
 ## Usage
