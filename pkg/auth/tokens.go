@@ -28,7 +28,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func createJWT(userID string) (string, error) {
+func createJWT(userID, role string) (string, error) {
 	// Define token expiration time
 	expirationTime := time.Now().Add(time.Hour * time.Duration(authConfig.ExpirationTime)) // 1 hour expiry
 
@@ -37,7 +37,7 @@ func createJWT(userID string) (string, error) {
 		"sub":  userID,                // Subject or user ID
 		"exp":  expirationTime.Unix(), // Expiration time
 		"iat":  time.Now().Unix(),     // Issued at time
-		"role": "user",                // Custom claim (e.g., user role)
+		"role": role,                  // Custom claim (e.g., user role)
 	}
 
 	// Create a new token using the HS256 signing method
@@ -76,8 +76,13 @@ func verifyJWT(tokenString string) (jwt.MapClaims, error) {
 }
 
 func CreateToken(userId, password string) (string, error) {
+
 	if CheckCredentials(userId, password) {
-		return createJWT(userId)
+		role, err := GetRole(userId)
+		if err != nil || role == "" {
+			role = "viewer"
+		}
+		return createJWT(userId, role)
 	}
 	return "", fmt.Errorf("invalid credentials")
 }
@@ -98,4 +103,26 @@ func VerifyUserToken(userId, token string) bool {
 func VerifyToken(token string) bool {
 	_, err := verifyJWT(token)
 	return err == nil
+}
+
+func GetRoleFromToken(token string) (string, error) {
+	claims, err := verifyJWT(token)
+	if err != nil {
+		return "", err
+	}
+	if role, ok := claims["role"].(string); ok {
+		return role, nil
+	}
+	return "", fmt.Errorf("role not found")
+}
+
+func GetUserFromToken(token string) (string, error) {
+	claims, err := verifyJWT(token)
+	if err != nil {
+		return "", err
+	}
+	if sub, ok := claims["sub"].(string); ok {
+		return sub, nil
+	}
+	return "", fmt.Errorf("user id not found")
 }

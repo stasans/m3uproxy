@@ -33,7 +33,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type Stream struct {
+type streamStruct struct {
 	index            int
 	m3u              m3uparser.M3UEntry
 	active           bool
@@ -63,7 +63,7 @@ var supportedMediaTypes = []contenttype.MediaType{
 	contenttype.NewMediaType("binary/octet-stream"),
 }
 
-func (stream *Stream) HealthCheck() {
+func (stream *streamStruct) healthCheck() {
 	resp, err := executeRequest("GET", stream.m3u.URI, stream.transport, stream.headers)
 	if err != nil {
 		return
@@ -83,7 +83,7 @@ func (stream *Stream) HealthCheck() {
 	stream.mux.Unlock()
 }
 
-func (stream *Stream) Serve(w http.ResponseWriter, r *http.Request) {
+func (stream *streamStruct) serve(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 

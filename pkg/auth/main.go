@@ -59,6 +59,10 @@ func InitializeAuth(data json.RawMessage) error {
 	return authproviders.InitializeAuthProvider(authConfig.Provider, authConfig.Settings)
 }
 
+func GetRole(username string) (string, error) {
+	return authproviders.GetRole(username)
+}
+
 func CheckCredentials(username, password string) bool {
 	return authproviders.AuthenticateUser(username, password)
 }
@@ -81,4 +85,12 @@ func ChangePassword(username, password string) error {
 
 func DropUsers() error {
 	return authproviders.DropUsers()
+}
+
+func GetUser(username string) (authproviders.UserView, error) {
+	return authproviders.GetUser(username)
+}
+
+func SetRole(username, role string) error {
+	return authproviders.SetRole(username, role)
 }

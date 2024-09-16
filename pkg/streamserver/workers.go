@@ -19,19 +19,25 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package authproviders
+package streamserver
 
-type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
-}
+import (
+	"log"
+	"sync"
+)
 
-type UserView struct {
-	Username string `json:"username"`
-	Role     string `json:"role"`
-}
+func monitorWorker(stream <-chan *streamStruct, stop <-chan bool, wg *sync.WaitGroup) {
 
-type Users struct {
-	Users []User `json:"users"`
+	defer wg.Done()
+	for s := range stream {
+		select {
+		case <-stop:
+			return
+		default:
+			s.healthCheck()
+			if !s.active {
+				log.Printf("Stream '%s' is offline.\n", s.m3u.Title)
+			}
+		}
+	}
 }

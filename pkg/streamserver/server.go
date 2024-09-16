@@ -23,21 +23,15 @@ package streamserver
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
-	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 
 	"github.com/gorilla/mux"
@@ -56,12 +50,12 @@ type StreamServerConfig struct {
 }
 
 var (
-	streams      = make([]*Stream, 0)
+	streams      = make([]*streamStruct, 0)
 	streamsMutex sync.Mutex
 	stopServer   = make(chan bool)
 	running      = false
 
-	noServiceStream *LocalStream
+	noServiceStream *ffmpegStream
 	serverConfig    StreamServerConfig
 	updateTimer     *time.Timer
 )
@@ -75,35 +69,17 @@ func LoadStreams() error {
 		return nil
 	}
 
-	extension := filepath.Ext(serverConfig.Playlist)
-	var playlist *m3uparser.M3UPlaylist
-	var err error
-	if extension == ".m3u" {
-		log.Printf("Loading M3U file %s\n", serverConfig.Playlist)
-		playlist, err = m3uparser.ParseM3UFile(serverConfig.Playlist)
-		if err != nil {
-			return err
-		}
-	} else if extension == ".json" {
-		log.Printf("Loading JSON file %s\n", serverConfig.Playlist)
-		playlist, err = m3uprovider.LoadFromFile(serverConfig.Playlist)
-		if err != nil {
-			return err
-		}
-	} else {
-		return errors.New("invalid file extension")
-	}
-
-	if playlist == nil {
-		return errors.New("failed to load playlist")
+	playlist, err := m3uprovider.LoadFromFile(serverConfig.Playlist)
+	if err != nil {
+		return err
 	}
 
 	log.Printf("Loaded %d streams from %s\n", playlist.StreamCount(), serverConfig.Playlist)
 
-	streamList := make([]*Stream, 0)
+	streamList := make([]*streamStruct, 0)
 
 	var wg sync.WaitGroup
-	var streamsChan = make(chan *Stream)
+	var streamsChan = make(chan *streamStruct)
 
 	stopWorkers := make(chan bool)
 	for i := 0; i < serverConfig.NumWorkers; i++ {
@@ -196,7 +172,7 @@ func LoadStreams() error {
 				// Clear non-standard tags
 				entry.ClearTags()
 
-				stream := Stream{
+				stream := streamStruct{
 					index:            i,
 					m3u:              entry,
 					active:           false,
@@ -257,9 +233,9 @@ func Start(data json.RawMessage) http.Handler {
 
 	// Start the no service stream
 	log.Printf("Generating HLS for no service image\n")
-	noServiceStream = NewImageStream(serverConfig.NoServiceImage, "no_service")
+	noServiceStream = newImageStream(serverConfig.NoServiceImage, "no_service")
 
-	if err := noServiceStream.Start(); err != nil {
+	if err := noServiceStream.start(); err != nil {
 		log.Fatalf("Failed to start no service stream: %v\n", err)
 		noServiceStream = nil
 	}
@@ -286,169 +262,30 @@ func Start(data json.RawMessage) http.Handler {
 	}()
 
 	handler := mux.NewRouter()
-	// Streams and EPG endpoints
-	handler.HandleFunc("/{token}/{streamId}/{path:.*}", handleGetStream)
-	handler.HandleFunc("/epg.xml", handleGetEpg)
-	handler.HandleFunc("/streams.m3u", handleGetPlaylist)
-	handler.HandleFunc("/player", handlerGetPlayer)
+	registerRoutes(handler)
+	handler.HandleFunc("/auth", basicAuth(handleAuthRequest))
 	// Health check endpoint
 	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	// Player, Playlist, EPG and Streams endpoints
+	handler.HandleFunc("/player", handlerGetPlayer)
+	handler.HandleFunc("/streams.m3u", basicAuth(handleGetPlaylist))
+	handler.HandleFunc("/epg.xml", handleGetEpg)
+	handler.HandleFunc("/{token}/{streamId}/{path:.*}", handleGetStream)
 
 	return handler
 }
 
 func Shutdown() {
 	if noServiceStream != nil {
-		if err := noServiceStream.Stop(); err != nil {
+		if err := noServiceStream.stop(); err != nil {
 			log.Fatalf("Failed to stop no service stream: %v\n", err)
 		}
-		noServiceStream.Cleanup()
+		noServiceStream.free()
 	}
 	updateTimer.Stop()
 	running = false
 	stopServer <- true
 	log.Printf("Stream server stopped\n")
-}
-
-func handleGetStream(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	vars := mux.Vars(r)
-	token := vars["token"]
-
-	ok := auth.VerifyToken(token)
-	if !ok {
-		http.Error(w, "Invalid token", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
-		return
-	}
-
-	streamID, err := strconv.Atoi(vars["streamId"])
-	if err != nil {
-		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
-		return
-	}
-
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-
-	if streamID < 0 || streamID >= len(streams) {
-		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
-		return
-	}
-
-	stream := streams[streamID]
-	if !stream.active {
-		noServiceStream.Serve(w, r)
-		return
-	}
-	stream.Serve(w, r)
-}
-
-func handleGetPlaylist(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	token, ok := getJWTToken(r)
-	if !ok {
-		var err error
-
-		username, password, ok := getUserCredentials(r)
-		if !ok {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
-			http.Error(w, "Authorization header is required", http.StatusUnauthorized)
-			log.Printf("Unauthorized access to stream: invalid credentials\n")
-			return
-		}
-
-		token, err = auth.CreateToken(username, password)
-		if err != nil {
-			w.Header().Set("WWW-Authenticate", `Basic realm="Restricted"`)
-			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-			log.Printf("Unauthorized access to stream: invalid credentials\n")
-			return
-		}
-	}
-
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("#EXTM3U\n"))
-	for i, stream := range streams {
-		if serverConfig.HideInactive && !stream.active {
-			continue
-		}
-
-		protocol := "http"
-		if serverConfig.UseHttps && r.TLS == nil {
-			protocol = "https"
-		}
-
-		uri := fmt.Sprintf("%s://%s/%s/%d/%s", protocol, r.Host, token, i, m3uPlaylist)
-		if stream.disableRemap {
-			uri = stream.m3u.URI
-		}
-
-		entry := m3uparser.M3UEntry{
-			URI:   uri,
-			Title: stream.m3u.Title,
-			Tags:  make([]m3uparser.M3UTag, 0),
-		}
-		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
-		if !stream.radio {
-			if stream.forceKodiHeaders || (serverConfig.KodiSupport && !stream.radio) {
-				entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
-				entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
-			}
-		}
-		w.Write([]byte(entry.String() + "\n"))
-	}
-}
-
-func handleGetEpg(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	content, err := loadContent(serverConfig.Epg)
-	if err != nil {
-		http.Error(w, "EPG file not found", http.StatusNotFound)
-		log.Printf("EPG file not found at %s\n", serverConfig.Epg)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(content))
-}
-
-func handlerGetPlayer(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	content, err := loadContent("assets/player.html")
-	if err != nil {
-		http.Error(w, "Player file not found", http.StatusNotFound)
-		log.Printf("Player file not found at %s\n", "player.html")
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(content))
 }

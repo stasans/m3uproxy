@@ -30,10 +30,13 @@ type AuthProvider interface {
 	AuthenticateUser(username, password string) bool
 	AddUser(username, password string) error
 	RemoveUser(username string) error
+	GetRole(username string) (string, error)
+	SetRole(username, role string) error
 	GetUsers() ([]string, error)
 	ChangePassword(username, password string) error
 	DropUsers() error
 	LoadUsers() error
+	GetUser(username string) (UserView, error)
 }
 
 type AuthProviderFactory func(config json.RawMessage) AuthProvider
@@ -72,6 +75,10 @@ func DropUsers() error {
 	return authProvider.DropUsers()
 }
 
+func GetRole(username string) (string, error) {
+	return authProvider.GetRole(username)
+}
+
 func InitializeAuthProvider(provider string, config json.RawMessage) error {
 	switch provider {
 	case "file":
@@ -84,4 +91,16 @@ func InitializeAuthProvider(provider string, config json.RawMessage) error {
 		return fmt.Errorf("unsupported auth provider")
 	}
 	return nil
+}
+
+func LoadUsers() error {
+	return authProvider.LoadUsers()
+}
+
+func GetUser(username string) (UserView, error) {
+	return authProvider.GetUser(username)
+}
+
+func SetRole(username, role string) error {
+	return authProvider.SetRole(username, role)
 }

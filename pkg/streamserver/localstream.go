@@ -28,32 +28,32 @@ import (
 	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 )
 
-type LocalStream struct {
-	Stream
+type ffmpegStream struct {
+	streamStruct
 	stream *ffmpeg.HLSStream
 }
 
-func NewImageStream(image, id string) *LocalStream {
-	return &LocalStream{
-		Stream: Stream{
+func (stream *ffmpegStream) start() error {
+	return stream.stream.Start()
+}
+
+func (stream *ffmpegStream) stop() error {
+	return stream.stream.Stop()
+}
+
+func (stream *ffmpegStream) free() {
+	stream.stream.Cleanup()
+}
+
+func (stream *ffmpegStream) Serve(w http.ResponseWriter, r *http.Request) {
+	stream.stream.Serve(w, r)
+}
+
+func newImageStream(image, id string) *ffmpegStream {
+	return &ffmpegStream{
+		streamStruct: streamStruct{
 			mux: &sync.Mutex{},
 		},
 		stream: ffmpeg.GenerateImageHLS(image, id),
 	}
-}
-
-func (stream *LocalStream) Start() error {
-	return stream.stream.Start()
-}
-
-func (stream *LocalStream) Stop() error {
-	return stream.stream.Stop()
-}
-
-func (stream *LocalStream) Cleanup() {
-	stream.stream.Cleanup()
-}
-
-func (stream *LocalStream) Serve(w http.ResponseWriter, r *http.Request) {
-	stream.stream.Serve(w, r)
 }

@@ -199,3 +199,63 @@ func (a *FileAuthProvider) LoadUsers() error {
 	}
 	return nil
 }
+
+func (a *FileAuthProvider) GetRole(username string) (string, error) {
+	err := a.LoadUsers()
+	if err != nil {
+		return "", err
+	}
+	a.userStoreMux.Lock()
+	defer a.userStoreMux.Unlock()
+	for i, user := range a.users.Users {
+		if user.Username == username {
+			return a.users.Users[i].Role, nil
+		}
+	}
+
+	return "", fmt.Errorf("user not found")
+}
+
+func (a *FileAuthProvider) GetUser(username string) (UserView, error) {
+	err := a.LoadUsers()
+	if err != nil {
+		return UserView{}, err
+	}
+	a.userStoreMux.Lock()
+	defer a.userStoreMux.Unlock()
+	for i, user := range a.users.Users {
+		if user.Username == username {
+			return UserView{
+				Username: a.users.Users[i].Username,
+				Role:     a.users.Users[i].Role,
+			}, nil
+		}
+	}
+	return UserView{}, fmt.Errorf("user not found")
+}
+
+func (a *FileAuthProvider) SetRole(username, role string) error {
+	err := a.LoadUsers()
+	if err != nil {
+		return err
+	}
+	a.userStoreMux.Lock()
+	defer a.userStoreMux.Unlock()
+	for i, user := range a.users.Users {
+		if user.Username == username {
+			a.users.Users[i].Role = role
+			data, err := json.MarshalIndent(a.users, "", "  ")
+			if err != nil {
+				return err
+			}
+			file, err := os.Create(a.config.FilePath)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			_, err = file.Write(data)
+			return err
+		}
+	}
+	return fmt.Errorf("user not found")
+}

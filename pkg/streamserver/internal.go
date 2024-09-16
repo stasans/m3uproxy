@@ -32,50 +32,11 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
 )
-
-func getUserCredentials(r *http.Request) (string, string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", "", false
-	}
-
-	authParts := strings.SplitN(authHeader, " ", 2)
-	if len(authParts) != 2 || authParts[0] != "Basic" {
-		return "", "", false
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(authParts[1])
-	if err != nil {
-		return "", "", false
-	}
-
-	credentials := strings.SplitN(string(decoded), ":", 2)
-	if len(credentials) != 2 {
-		return "", "", false
-	}
-
-	return credentials[0], credentials[1], true
-}
-
-func getJWTToken(r *http.Request) (string, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return "", false
-	}
-
-	authParts := strings.SplitN(authHeader, " ", 2)
-	if len(authParts) != 2 || authParts[0] != "Bearer" {
-		return "", false
-	}
-
-	return authParts[1], true
-}
 
 func executeRequest(method, URI string, transport *http.Transport, headers map[string]string) (*http.Response, error) {
 
@@ -233,21 +194,5 @@ func loadContent(filePath string) (string, error) {
 			return "", err
 		}
 		return string(body), nil
-	}
-}
-
-func monitorWorker(stream <-chan *Stream, stop <-chan bool, wg *sync.WaitGroup) {
-
-	defer wg.Done()
-	for s := range stream {
-		select {
-		case <-stop:
-			return
-		default:
-			s.HealthCheck()
-			if !s.active {
-				log.Printf("Stream '%s' is offline.\n", s.m3u.Title)
-			}
-		}
 	}
 }

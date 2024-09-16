@@ -183,3 +183,14 @@ func LoadFromFile(path string) (*m3uparser.M3UPlaylist, error) {
 
 	return Load(config)
 }
+
+func LoadFromBytes(data []byte) (*m3uparser.M3UPlaylist, error) {
+
+	config := PlaylistConfig{}
+	err := json.Unmarshal(data, &config)
+	if err != nil {
+		return nil, err
+	}
+
+	return Load(config)
+}
