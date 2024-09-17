@@ -24,14 +24,13 @@ package cmd
 import (
 	"encoding/json"
 	"os"
+
+	"github.com/a13labs/m3uproxy/pkg/streamserver"
 )
 
 type Config struct {
-	Port         int             `json:"port"`
-	LogFile      string          `json:"log_file,omitempty"`
-	StreamServer json.RawMessage `json:"stream_server"`
-	Auth         json.RawMessage `json:"auth"`
-	Security     json.RawMessage `json:"security,omitempty"`
+	LogFile      string                    `json:"log_file,omitempty"`
+	StreamServer streamserver.ServerConfig `json:"stream_server"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -53,10 +52,6 @@ func LoadConfig() (*Config, error) {
 	err = json.NewDecoder(file).Decode(&config)
 	if err != nil {
 		return nil, err
-	}
-
-	if config.Port == 0 {
-		config.Port = 8080
 	}
 
 	return &config, nil

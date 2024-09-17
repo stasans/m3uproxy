@@ -22,31 +22,39 @@ THE SOFTWARE.
 package streamserver
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
+	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 
 	"github.com/gorilla/mux"
 )
 
-type StreamServerConfig struct {
-	Playlist       string `json:"playlist"`
-	Epg            string `json:"epg"`
-	Timeout        int    `json:"default_timeout,omitempty"`
-	NumWorkers     int    `json:"num_workers,omitempty"`
-	NoServiceImage string `json:"no_service_image,omitempty"`
-	ScanTime       int    `json:"scan_time,omitempty"`
-	HideInactive   bool   `json:"hide_inactive,omitempty"`
-	KodiSupport    bool   `json:"kodi,omitempty"`
-	UseHttps       bool   `json:"force_https_url,omitempty"`
+type ServerConfig struct {
+	Port           int             `json:"port"`
+	Playlist       string          `json:"playlist"`
+	Epg            string          `json:"epg"`
+	Timeout        int             `json:"default_timeout,omitempty"`
+	NumWorkers     int             `json:"num_workers,omitempty"`
+	NoServiceImage string          `json:"no_service_image,omitempty"`
+	ScanTime       int             `json:"scan_time,omitempty"`
+	HideInactive   bool            `json:"hide_inactive,omitempty"`
+	KodiSupport    bool            `json:"kodi,omitempty"`
+	UseHttps       bool            `json:"force_https_url,omitempty"`
+	Security       SecurityConfig  `json:"security,omitempty"`
+	Auth           json.RawMessage `json:"auth"`
 }
 
 var (
@@ -56,7 +64,7 @@ var (
 	running      = false
 
 	noServiceStream *ffmpegStream
-	serverConfig    StreamServerConfig
+	serverConfig    ServerConfig
 	updateTimer     *time.Timer
 )
 
@@ -202,13 +210,9 @@ func LoadStreams() error {
 	return nil
 }
 
-func Start(data json.RawMessage) http.Handler {
+func Start(config ServerConfig) {
 
-	err := json.Unmarshal(data, &serverConfig)
-	if err != nil {
-		log.Printf("Failed to parse stream server configuration: %s\n", err)
-		return nil
-	}
+	serverConfig = config
 
 	log.Printf("Starting stream server\n")
 	log.Printf("Playlist: %s\n", serverConfig.Playlist)
@@ -224,6 +228,18 @@ func Start(data json.RawMessage) http.Handler {
 
 	if serverConfig.ScanTime == 0 {
 		serverConfig.ScanTime = 24 * 60 * 60
+	}
+
+	if serverConfig.Port == 0 {
+		serverConfig.Port = 8080
+	}
+
+	log.Printf("Starting M3U Proxy Server\n")
+
+	err := auth.InitializeAuth(serverConfig.Auth)
+	if err != nil {
+		log.Printf("Failed to initialize authentication: %s\n", err)
+		return
 	}
 
 	// Initialize FFmpeg
@@ -265,19 +281,38 @@ func Start(data json.RawMessage) http.Handler {
 	registerRoutes(handler)
 	handler.HandleFunc("/auth", basicAuth(handleAuthRequest))
 	// Health check endpoint
-	handler.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+	handler.HandleFunc("/health", handleHealthCheck)
 	// Player, Playlist, EPG and Streams endpoints
 	handler.HandleFunc("/player", handlerGetPlayer)
 	handler.HandleFunc("/streams.m3u", basicAuth(handleGetPlaylist))
 	handler.HandleFunc("/epg.xml", handleGetEpg)
 	handler.HandleFunc("/{token}/{streamId}/{path:.*}", handleGetStream)
 
-	return handler
-}
+	if configureGeoIp() != nil {
+		log.Println("GeoIP database not found, geo-location will not be available.")
+	}
 
-func Shutdown() {
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", serverConfig.Port),
+		Handler: geoip(handler),
+	}
+
+	// Channel to listen for termination signal (SIGINT, SIGTERM)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+
+	go func() {
+		log.Printf("Server listening on %s.\n", server.Addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Println("Server failed:", err)
+		}
+	}()
+
+	<-quit // Wait for SIGINT or SIGTERM
+
+	log.Println("Shutting down server...")
+
+	// Stop the no service stream
 	if noServiceStream != nil {
 		if err := noServiceStream.stop(); err != nil {
 			log.Fatalf("Failed to stop no service stream: %v\n", err)
@@ -288,4 +323,15 @@ func Shutdown() {
 	running = false
 	stopServer <- true
 	log.Printf("Stream server stopped\n")
+
+	cleanGeoIp()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Println("Server forced to shutdown:", err)
+	}
+
+	log.Println("Server shutdown.")
 }

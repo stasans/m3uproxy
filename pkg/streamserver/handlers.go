@@ -181,3 +181,11 @@ func handleAuthRequest(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(resp))
 	w.WriteHeader(http.StatusOK)
 }
+
+func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	if streams == nil {
+		http.Error(w, "Streams not loaded", http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}

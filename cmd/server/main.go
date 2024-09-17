@@ -22,18 +22,10 @@ THE SOFTWARE.
 package server
 
 import (
-	"context"
-	"fmt"
-	"log"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/a13labs/m3uproxy/cmd"
 	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/streamserver"
 	"github.com/spf13/cobra"
 )
@@ -52,55 +44,7 @@ var serverCmd = &cobra.Command{
 
 		setupLogging(config)
 
-		log.Printf("Starting M3U Proxy Server\n")
-
-		err = auth.InitializeAuth(config.Auth)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-
-		if configureSecurity(config.Security) != nil {
-			log.Println("Security settings not configured.")
-		}
-
-		if configureGeoIp() != nil {
-			log.Println("GeoIP database not found, geo-location will not be available.")
-		}
-
-		server := &http.Server{
-			Addr:    fmt.Sprintf(":%d", config.Port),
-			Handler: geoip(streamserver.Start(config.StreamServer)),
-		}
-
-		// Channel to listen for termination signal (SIGINT, SIGTERM)
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-
-		go func() {
-			log.Printf("Server listening on %s.\n", server.Addr)
-			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Println("Server failed:", err)
-			}
-		}()
-
-		<-quit // Wait for SIGINT or SIGTERM
-
-		log.Println("Shutting down server...")
-
-		// Stop the no service stream
-		streamserver.Shutdown()
-
-		cleanGeoIp()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if err := server.Shutdown(ctx); err != nil {
-			log.Println("Server forced to shutdown:", err)
-		}
-
-		log.Println("Server shutdown.")
+		streamserver.Start(config.StreamServer)
 	},
 }
 

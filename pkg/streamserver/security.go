@@ -1,8 +1,6 @@
-package server
+package streamserver
 
 import (
-	"encoding/json"
-	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -18,50 +16,37 @@ type GeoIPConfig struct {
 }
 
 type SecurityConfig struct {
-	GeoIP       GeoIPConfig `json:"geoip"`
-	DisableCors bool        `json:"disable_cors"`
+	GeoIP       GeoIPConfig `json:"geoip,omitempty"`
+	DisableCors bool        `json:"disable_cors,omitempty"`
 	CorsOrigins []string    `json:"cors_origins,omitempty"`
 }
-
-var securityConfig *SecurityConfig
 
 var geoipDb *geoip2.Reader
 var geoipWhitelist map[string]bool
 var geoIPCidrWhitelist []*net.IPNet
 
-func configureSecurity(data json.RawMessage) error {
-
-	securityConfig = &SecurityConfig{}
-	err := json.Unmarshal(data, securityConfig)
-	if err != nil {
-		return nil
-	}
-
-	return nil
-}
-
 func configureGeoIp() error {
-
-	if securityConfig == nil {
-		return errors.New("missing configuration")
-	}
 
 	var err error
 
-	geoipDb, err = geoip2.Open(securityConfig.GeoIP.Database)
+	if serverConfig.Security.GeoIP.Database == "" {
+		return nil
+	}
+
+	geoipDb, err = geoip2.Open(serverConfig.Security.GeoIP.Database)
 	if err != nil {
 		geoipDb = nil
 		return err
 	}
 
 	geoipWhitelist = make(map[string]bool)
-	for _, country := range securityConfig.GeoIP.Whitelist {
+	for _, country := range serverConfig.Security.GeoIP.Whitelist {
 		geoipWhitelist[country] = true
 	}
 
 	geoIPCidrWhitelist = make([]*net.IPNet, 0)
 
-	for _, cidr := range securityConfig.GeoIP.InternalNetworks {
+	for _, cidr := range serverConfig.Security.GeoIP.InternalNetworks {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			return err
@@ -80,7 +65,7 @@ func cleanGeoIp() {
 
 func geoip(next http.Handler) http.Handler {
 
-	if securityConfig == nil || geoipDb == nil {
+	if geoipDb == nil {
 		return next
 	}
 

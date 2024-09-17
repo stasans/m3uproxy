@@ -51,7 +51,7 @@ var addCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		err = auth.InitializeAuth(config.Auth)
+		err = auth.InitializeAuth(config.StreamServer.Auth)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
