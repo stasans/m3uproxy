@@ -26,6 +26,7 @@ import (
 
 	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/streamserver"
 
 	"github.com/spf13/cobra"
 )
@@ -40,13 +41,13 @@ var listCmd = &cobra.Command{
 	Short: "List users",
 	Run: func(cmd *cobra.Command, args []string) {
 
-		config, err := rootCmd.LoadConfig()
+		err := streamserver.LoadServerConfig(rootCmd.ConfigFile)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
 		}
 
-		err = auth.InitializeAuth(config.StreamServer.Auth)
+		err = auth.InitializeAuth(streamserver.Config.Auth)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)

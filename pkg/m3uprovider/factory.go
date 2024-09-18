@@ -22,38 +22,14 @@ THE SOFTWARE.
 package m3uprovider
 
 import (
-	"encoding/json"
 	"errors"
 	"log"
-	"os"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider/file"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider/iptvorg"
 	types "github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
 )
-
-type OverrideEntry struct {
-	ChannelName      string            `json:"name,omitempty"`
-	URL              string            `json:"url,omitempty"`
-	Headers          map[string]string `json:"headers,omitempty"`
-	Disabled         bool              `json:"disabled,omitempty"`
-	HttpProxy        string            `json:"http_proxy,omitempty"`
-	ForceKodiHeaders bool              `json:"kodi,omitempty"`
-	DisableRemap     bool              `json:"disable_remap,omitempty"`
-}
-
-type ProviderConfig struct {
-	Provider string          `json:"provider"`
-	Config   json.RawMessage `json:"config"`
-}
-
-type PlaylistConfig struct {
-	Providers         map[string]ProviderConfig `json:"providers"`
-	ProvidersPriority []string                  `json:"providers_priority,omitempty"`
-	ChannelOrder      []string                  `json:"channel_order,omitempty"`
-	Overrides         map[string]OverrideEntry  `json:"overrides,omitempty"`
-}
 
 func NewProvider(config ProviderConfig) types.M3UProvider {
 
@@ -67,7 +43,7 @@ func NewProvider(config ProviderConfig) types.M3UProvider {
 	}
 }
 
-func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
+func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 
 	providersPriority := make([]string, 0)
 	if config.ProvidersPriority != nil {
@@ -169,25 +145,7 @@ func Load(config PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 
 func LoadFromFile(path string) (*m3uparser.M3UPlaylist, error) {
 
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	config := PlaylistConfig{}
-	err = json.NewDecoder(file).Decode(&config)
-	if err != nil {
-		return nil, err
-	}
-
-	return Load(config)
-}
-
-func LoadFromBytes(data []byte) (*m3uparser.M3UPlaylist, error) {
-
-	config := PlaylistConfig{}
-	err := json.Unmarshal(data, &config)
+	config, err := LoadPlaylistConfig(path)
 	if err != nil {
 		return nil, err
 	}

@@ -19,18 +19,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package server
+package streamserver
 
 import (
 	"log"
 	"os"
-
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
 )
 
-func setupLogging(config *rootCmd.Config) {
-	if config.LogFile != "" {
-		file, err := os.OpenFile(config.LogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+func setupLogging(out string) {
+	if out != "" {
+		file, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
 			log.Fatalf("Failed to open log file: %v", err)
 		}

@@ -41,7 +41,7 @@ import (
 func executeRequest(method, URI string, transport *http.Transport, headers map[string]string) (*http.Response, error) {
 
 	client := &http.Client{
-		Timeout:   time.Duration(serverConfig.Timeout) * time.Second,
+		Timeout:   time.Duration(Config.Timeout) * time.Second,
 		Transport: transport,
 	}
 

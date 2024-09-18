@@ -23,10 +23,13 @@ package streamserver
 
 import (
 	"encoding/base64"
+	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 
+	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
 
@@ -115,4 +118,43 @@ func (stream *streamStruct) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	serveAndRemap(uri.String(), stream.transport, stream.headers, w)
+}
+
+func streamRequest(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	token := vars["token"]
+
+	ok := auth.VerifyToken(token)
+	if !ok {
+		http.Error(w, "Forbidden", http.StatusUnauthorized)
+		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
+		return
+	}
+
+	streamID, err := strconv.Atoi(vars["streamId"])
+	if err != nil {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
+
+	streamsMutex.Lock()
+	defer streamsMutex.Unlock()
+
+	if streamID < 0 || streamID >= len(streams) {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
+
+	stream := streams[streamID]
+	if !stream.active {
+		noServiceStream.Serve(w, r)
+		return
+	}
+	stream.serve(w, r)
 }

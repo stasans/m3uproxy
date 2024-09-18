@@ -19,40 +19,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package cmd
+package streamserver
 
 import (
-	"encoding/json"
-	"os"
-
-	"github.com/a13labs/m3uproxy/pkg/streamserver"
+	"log"
+	"net/http"
 )
 
-type Config struct {
-	LogFile      string                    `json:"log_file,omitempty"`
-	StreamServer streamserver.ServerConfig `json:"stream_server"`
-}
+func playerRequest(w http.ResponseWriter, r *http.Request) {
 
-func LoadConfig() (*Config, error) {
-
-	_, err := os.Stat(ConfigFile)
-
-	if os.IsNotExist(err) {
-		return nil, err
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
 
-	file, err := os.Open(ConfigFile)
+	content, err := loadContent("assets/player.html")
 	if err != nil {
-		return nil, err
+		http.Error(w, "Player file not found", http.StatusNotFound)
+		log.Printf("Player file not found at %s\n", "player.html")
+		return
 	}
 
-	defer file.Close()
-
-	var config Config
-	err = json.NewDecoder(file).Decode(&config)
-	if err != nil {
-		return nil, err
-	}
-
-	return &config, nil
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
 }

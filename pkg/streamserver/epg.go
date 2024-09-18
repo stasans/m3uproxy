@@ -19,25 +19,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package server
+package streamserver
 
 import (
-	"github.com/a13labs/m3uproxy/cmd"
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/streamserver"
-	"github.com/spf13/cobra"
+	"log"
+	"net/http"
 )
 
-var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Start the M3U proxy server",
-	Long:  `Start the M3U proxy server that proxies M3U playlists and EPG data.`,
-	Run: func(cmd *cobra.Command, args []string) {
+func epgRequest(w http.ResponseWriter, r *http.Request) {
 
-		streamserver.Run(rootCmd.ConfigFile)
-	},
-}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 
-func init() {
-	cmd.RootCmd.AddCommand(serverCmd)
+	content, err := loadContent(Config.Epg)
+	if err != nil {
+		http.Error(w, "EPG file not found", http.StatusNotFound)
+		log.Printf("EPG file not found at %s\n", Config.Epg)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(content))
 }

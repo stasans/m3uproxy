@@ -9,18 +9,6 @@ import (
 	"github.com/oschwald/geoip2-golang"
 )
 
-type GeoIPConfig struct {
-	Database         string   `json:"database"`
-	Whitelist        []string `json:"whitelist,omitempty"`
-	InternalNetworks []string `json:"internal_networks,omitempty"`
-}
-
-type SecurityConfig struct {
-	GeoIP       GeoIPConfig `json:"geoip,omitempty"`
-	DisableCors bool        `json:"disable_cors,omitempty"`
-	CorsOrigins []string    `json:"cors_origins,omitempty"`
-}
-
 var geoipDb *geoip2.Reader
 var geoipWhitelist map[string]bool
 var geoIPCidrWhitelist []*net.IPNet
@@ -29,24 +17,24 @@ func configureGeoIp() error {
 
 	var err error
 
-	if serverConfig.Security.GeoIP.Database == "" {
+	if Config.Security.GeoIP.Database == "" {
 		return nil
 	}
 
-	geoipDb, err = geoip2.Open(serverConfig.Security.GeoIP.Database)
+	geoipDb, err = geoip2.Open(Config.Security.GeoIP.Database)
 	if err != nil {
 		geoipDb = nil
 		return err
 	}
 
 	geoipWhitelist = make(map[string]bool)
-	for _, country := range serverConfig.Security.GeoIP.Whitelist {
+	for _, country := range Config.Security.GeoIP.Whitelist {
 		geoipWhitelist[country] = true
 	}
 
 	geoIPCidrWhitelist = make([]*net.IPNet, 0)
 
-	for _, cidr := range serverConfig.Security.GeoIP.InternalNetworks {
+	for _, cidr := range Config.Security.GeoIP.InternalNetworks {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
 			return err

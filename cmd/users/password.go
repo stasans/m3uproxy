@@ -27,6 +27,7 @@ import (
 
 	rootCmd "github.com/a13labs/m3uproxy/cmd"
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/streamserver"
 
 	"github.com/spf13/cobra"
 )
@@ -44,13 +45,13 @@ var passwordCmd = &cobra.Command{
 			cmd.PrintErrln("Usage: m3uproxy users add <username> <password>")
 			os.Exit(1)
 		}
-		config, err := rootCmd.LoadConfig()
+		err := streamserver.LoadServerConfig(rootCmd.ConfigFile)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
 		}
 
-		err = auth.InitializeAuth(config.StreamServer.Auth)
+		err = auth.InitializeAuth(streamserver.Config.Auth)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
