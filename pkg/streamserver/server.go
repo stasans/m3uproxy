@@ -195,7 +195,6 @@ func Run(configPath string) {
 	setupLogging(Config.LogFile)
 
 	for {
-
 		log.Printf("Starting M3U Proxy Server\n")
 
 		log.Printf("Starting stream server\n")
@@ -244,15 +243,13 @@ func Run(configPath string) {
 			}
 		}()
 
-		handler := mux.NewRouter()
-		registerAPIRoutes(handler)
-		// Health check endpoint
-		handler.HandleFunc("/health", healthCheckRequest)
-		// Player, Playlist, EPG and Streams endpoints
-		handler.HandleFunc("/player", playerRequest)
-		handler.HandleFunc("/streams.m3u", basicAuth(playlistRequest))
-		handler.HandleFunc("/epg.xml", epgRequest)
-		handler.HandleFunc("/{token}/{streamId}/{path:.*}", streamRequest)
+		r := mux.NewRouter()
+		registerHealthCheckRoutes(r)
+		registerAPIRoutes(r)
+		registerPlaylistRoutes(r)
+		registerPlayerRoutes(r)
+		registerEpgRoutes(r)
+		registerStreamsRoutes(r)
 
 		if configureGeoIp() != nil {
 			log.Println("GeoIP database not found, geo-location will not be available.")
@@ -260,7 +257,7 @@ func Run(configPath string) {
 
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", Config.Port),
-			Handler: geoip(handler),
+			Handler: geoip(r),
 		}
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)

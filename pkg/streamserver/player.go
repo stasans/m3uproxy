@@ -24,6 +24,8 @@ package streamserver
 import (
 	"log"
 	"net/http"
+
+	"github.com/gorilla/mux"
 )
 
 func playerRequest(w http.ResponseWriter, r *http.Request) {
@@ -43,4 +45,9 @@ func playerRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(content))
+}
+
+func registerPlayerRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/player", playerRequest)
+	return r
 }

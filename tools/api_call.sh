@@ -43,8 +43,6 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
-echo "API call: $API_METHOD $API_URL/api/v1/$API_CALL"
-
 case $API_METHOD in
   GET)
     curl -s -X GET $API_URL/api/v1/$API_CALL -H "Authorization: Bearer $TOKEN" | jq

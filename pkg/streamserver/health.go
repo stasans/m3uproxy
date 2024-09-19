@@ -21,33 +21,9 @@ THE SOFTWARE.
 */
 package streamserver
 
-import (
-	"log"
-	"net/http"
+import "github.com/gorilla/mux"
 
-	"github.com/gorilla/mux"
-)
-
-func epgRequest(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	content, err := loadContent(Config.Epg)
-	if err != nil {
-		http.Error(w, "EPG file not found", http.StatusNotFound)
-		log.Printf("EPG file not found at %s\n", Config.Epg)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/xml")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(content))
-}
-
-func registerEpgRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/epg.xml", epgRequest)
+func registerHealthCheckRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/health", healthCheckRequest)
 	return r
 }

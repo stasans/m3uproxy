@@ -34,13 +34,14 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func registerAPIRoutes(r *mux.Router) {
+func registerAPIRoutes(r *mux.Router) *mux.Router {
 	r.HandleFunc("/api/v1/authenticate", basicAuth(authenticateRequest))
 	r.HandleFunc("/api/v1/reload", adminAccess(reloadRequest))
 	r.HandleFunc("/api/v1/config", adminAccess(configAPIRequest))
 	r.HandleFunc("/api/v1/playlist", adminAccess(playlistAPIRequest))
 	r.HandleFunc("/api/v1/users", adminAccess(usersAPIRequest))
 	r.HandleFunc("/api/v1/user/{id}", adminAccess(userAPIRequest))
+	return r
 }
 
 func authenticateRequest(w http.ResponseWriter, r *http.Request) {
@@ -88,6 +89,9 @@ func configAPIRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		err = SaveServerConfig(newConfig)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+		}
 		return
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)

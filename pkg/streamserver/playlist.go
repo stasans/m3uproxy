@@ -29,6 +29,7 @@ import (
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
+	"github.com/gorilla/mux"
 )
 
 var (
@@ -60,6 +61,11 @@ func SavePlaylist(p m3uprovider.PlaylistConfig) error {
 	return playlistConfig.SaveToFile(Config.Playlist)
 }
 
+func registerPlaylistRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/streams.m3u", basicAuth(playlistRequest))
+	return r
+}
+
 func playlistRequest(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
@@ -74,6 +80,9 @@ func playlistRequest(w http.ResponseWriter, r *http.Request) {
 	scheme := r.Header.Get("X-Forwarded-Proto")
 	if scheme == "" {
 		scheme = r.URL.Scheme
+	}
+	if scheme == "" {
+		scheme = "http"
 	}
 
 	streamsMutex.Lock()

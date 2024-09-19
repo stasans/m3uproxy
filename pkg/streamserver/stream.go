@@ -158,3 +158,8 @@ func streamRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	stream.serve(w, r)
 }
+
+func registerStreamsRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/{token}/{streamId}/{path:.*}", streamRequest)
+	return r
+}
