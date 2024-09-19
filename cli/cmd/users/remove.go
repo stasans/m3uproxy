@@ -19,25 +19,29 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package server
+package users
 
 import (
-	"github.com/a13labs/m3uproxy/cmd"
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/streamserver"
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
-var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Start the M3U proxy server",
-	Long:  `Start the M3U proxy server that proxies M3U playlists and EPG data.`,
-	Run: func(cmd *cobra.Command, args []string) {
-
-		streamserver.Run(rootCmd.ConfigFile)
-	},
+func init() {
+	usersCmd.AddCommand(removeCmd)
 }
 
-func init() {
-	cmd.RootCmd.AddCommand(serverCmd)
+var removeCmd = &cobra.Command{
+	Use:   "remove",
+	Short: "Remove a user",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) != 1 {
+			cmd.PrintErrln("Usage: m3uproxycli users remove <username>")
+			os.Exit(1)
+		}
+
+		fmt.Println("User removed")
+		os.Exit(0)
+	},
 }

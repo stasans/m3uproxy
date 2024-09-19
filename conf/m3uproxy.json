@@ -1,23 +1,23 @@
 {
-    "epg": "",
     "port": 8080,
-    "stream_server": {
-        "playlist": "conf/playlist.json",
-        "no_service_image": "assets/no_service_pt.jpg",
-        "default_timeout": 3,
-        "max_workers": 10,
-        "hide_inactive": true,
-        "secret_key": "secret"
-    },
+    "epg": "https://m3upt.com/epg",
+    "playlist": "conf/playlist.json",
+    "no_service_image": "assets/no_service_pt.jpg",
+    "default_timeout": 3,
+    "num_workers": 10,
+    "scan_time": 600,
     "security": {
         "geoip": {
             "database": "cache/GeoLite2-Country.mmdb",
             "whitelist": [],
-            "internal_networks": []
+            "internal_networks": [
+                "127.0.0.0/8"
+            ]
         }
     },
     "auth": {
         "provider": "file",
+        "secret_key": "secret",
         "settings": {
             "file_path": "cache/auth.json"
         }

@@ -19,50 +19,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package users
+package epg
 
 import (
-	"fmt"
-	"os"
-
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/a13labs/m3uproxy/pkg/streamserver"
+	"github.com/a13labs/m3uproxy/cli/cmd"
 
 	"github.com/spf13/cobra"
 )
 
-func init() {
-	usersCmd.AddCommand(removeCmd)
-	removeCmd.Flags().StringVarP(&usersFilePath, "users", "u", "users.json", "Path to the users JSON file")
+var epgCmd = &cobra.Command{
+	Use:   "epg",
+	Short: "Generate M3U epg",
+	Long:  ``,
+	Run: func(cmd *cobra.Command, args []string) {
+
+	},
 }
 
-var removeCmd = &cobra.Command{
-	Use:   "remove",
-	Short: "Remove a user",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) != 1 {
-			cmd.PrintErrln("Usage: m3uproxy users remove <username>")
-			os.Exit(1)
-		}
-		err := streamserver.LoadServerConfig(rootCmd.ConfigFile)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-
-		err = auth.InitializeAuth(streamserver.Config.Auth)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-
-		err = auth.RemoveUser(args[0])
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-		fmt.Println("User removed")
-		os.Exit(0)
-	},
+func init() {
+	cmd.RootCmd.AddCommand(epgCmd)
 }

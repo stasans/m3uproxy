@@ -19,48 +19,25 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package users
+package server
 
 import (
-	"os"
-
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/streamserver"
-
+	"github.com/a13labs/m3uproxy/server/cmd"
+	rootCmd "github.com/a13labs/m3uproxy/server/cmd"
 	"github.com/spf13/cobra"
 )
 
-func init() {
-	usersCmd.AddCommand(listCmd)
-	listCmd.Flags().StringVarP(&usersFilePath, "users", "u", "users.json", "Path to the users JSON file")
-}
-
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List users",
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Start the M3U proxy server",
+	Long:  `Start the M3U proxy server that proxies M3U playlists and EPG data.`,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		err := streamserver.LoadServerConfig(rootCmd.ConfigFile)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-
-		err = auth.InitializeAuth(streamserver.Config.Auth)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-
-		users, err := auth.GetUsers()
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-		for _, user := range users {
-			cmd.OutOrStdout().Write([]byte(user + "\n"))
-		}
-		os.Exit(0)
+		streamserver.Run(rootCmd.ConfigFile)
 	},
+}
+
+func init() {
+	cmd.RootCmd.AddCommand(serverCmd)
 }

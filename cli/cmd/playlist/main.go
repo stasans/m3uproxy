@@ -19,49 +19,23 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package users
+package playlist
 
 import (
-	"fmt"
-	"os"
-
-	rootCmd "github.com/a13labs/m3uproxy/cmd"
-	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/a13labs/m3uproxy/pkg/streamserver"
+	"github.com/a13labs/m3uproxy/server/cmd"
 
 	"github.com/spf13/cobra"
 )
 
-func init() {
-	usersCmd.AddCommand(passwordCmd)
-	passwordCmd.Flags().StringVarP(&usersFilePath, "users", "u", "users.json", "Path to the users JSON file")
+var playlistCmd = &cobra.Command{
+	Use:   "playlist",
+	Short: "Generate M3U playlists",
+	Long:  ``,
+	Run: func(cmd *cobra.Command, args []string) {
+
+	},
 }
 
-var passwordCmd = &cobra.Command{
-	Use:   "password",
-	Short: "Change a user password",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) != 2 {
-			cmd.PrintErrln("Usage: m3uproxy users add <username> <password>")
-			os.Exit(1)
-		}
-		err := streamserver.LoadServerConfig(rootCmd.ConfigFile)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-
-		err = auth.InitializeAuth(streamserver.Config.Auth)
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-		err = auth.ChangePassword(args[0], args[1])
-		if err != nil {
-			cmd.PrintErrln(err)
-			os.Exit(1)
-		}
-		fmt.Println("Password changed")
-		os.Exit(0)
-	},
+func init() {
+	cmd.RootCmd.AddCommand(playlistCmd)
 }

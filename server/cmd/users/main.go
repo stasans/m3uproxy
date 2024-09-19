@@ -19,33 +19,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package cmd
+package users
 
 import (
-	"os"
+	"github.com/a13labs/m3uproxy/server/cmd"
 
 	"github.com/spf13/cobra"
 )
 
-var ConfigFile string
-
-// RootCmd represents the base command when called without any subcommands
-var RootCmd = &cobra.Command{
-	Use:   "m3uproxy",
-	Short: "A simple HTTP server that proxies M3U playlists",
-	Long:  `m3uproxy is a simple HTTP server that proxies M3U playlists.`,
-}
-
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the RootCmd.
-func Execute() {
-
-	err := RootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
-	}
+var usersCmd = &cobra.Command{
+	Use:   "users",
+	Short: "Control the M3U proxy users",
+	Long:  ``,
 }
 
 func init() {
-	RootCmd.PersistentFlags().StringVarP(&ConfigFile, "config", "c", "", "config file (default is m3uproxy.json)")
+	cmd.RootCmd.AddCommand(usersCmd)
 }

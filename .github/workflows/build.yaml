@@ -24,32 +24,36 @@ jobs:
 
       - name: Build for Linux
         run: |
-          go build -o m3uproxy main.go
-          zip m3uproxy-linux-x64.zip m3uproxy
+          go build -o m3uproxy server/main.go
+          go build -o m3uproxycli cli/main.go
+          zip m3uproxy-linux-x64.zip m3uproxy m3uproxycli
         env:
           GOOS: linux
           GOARCH: amd64
 
       - name: Build for Windows
         run: |
-          go build -o m3uproxy.exe main.go
-          zip m3uproxy-windows.zip m3uproxy
+          go build -o m3uproxy.exe server/main.go
+          go build -o m3uproxycli.exe cli/main.go
+          zip m3uproxy-windows.zip m3uproxy m3uproxycli
         env:
           GOOS: windows
           GOARCH: amd64
 
       - name: Build for macOS (Intel)
         run: |
-          go build -o m3uproxy main.go
-          zip m3uproxy-darwin-x64.zip m3uproxy
+          go build -o m3uproxy server/main.go
+          go build -o m3uproxycli cli/main.go
+          zip m3uproxy-darwin-x64.zip m3uproxy m3uproxycli
         env:
           GOOS: darwin
           GOARCH: amd64
 
       - name: Build for macOS (Apple Silicon)
         run: |
-          go build -o m3uproxy main.go
-          zip m3uproxy-darwin-arm64.zip m3uproxy
+          go build -o m3uproxy server/main.go
+          go build -o m3uproxycli cli/main.go
+          zip m3uproxy-darwin-arm64.zip m3uproxy m3uproxycli
         env:
           GOOS: darwin
           GOARCH: arm64

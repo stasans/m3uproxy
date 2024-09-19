@@ -10,9 +10,11 @@ BUILD_DIR = build
 # Targets and Commands
 all: clean build test
 
-build:
+build: build-server
+
+build-server:
 	mkdir -p ${BUILD_DIR}
-	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) -v .
+	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) -v ./server
 
 test:
 	$(GOTEST) -v ./pkg/...

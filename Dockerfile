@@ -14,11 +14,13 @@ RUN go mod download
 COPY . .
 RUN chmod +x scripts/*
 
-RUN go build -o m3uproxy
+RUN go build -o m3uproxy server/main.go
+RUN go build -o m3uproxycli cli/main.go
 
 FROM alpine:latest
 
 COPY --from=builder /app/m3uproxy /app/m3uproxy
+COPY --from=builder /app/m3uproxy /app/m3uproxycli
 COPY --from=builder /app/conf /app/conf
 COPY --from=builder /app/assets /app/assets
 COPY --from=builder /app/scripts/entrypoint.sh /app/entrypoint.sh

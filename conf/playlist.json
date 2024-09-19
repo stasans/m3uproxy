@@ -6,5 +6,6 @@
                 "source": "https://m3upt.com/iptv"
             }
         }
-    }
+    },
+    "overrides": {}
 }
