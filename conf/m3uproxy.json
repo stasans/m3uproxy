@@ -13,7 +13,10 @@
             "internal_networks": [
                 "127.0.0.0/8"
             ]
-        }
+        },
+        "allowed_cors_domains": [
+            "*"
+        ]
     },
     "auth": {
         "provider": "file",

@@ -33,7 +33,8 @@ type GeoIPConfig struct {
 }
 
 type SecurityConfig struct {
-	GeoIP GeoIPConfig `json:"geoip,omitempty"`
+	GeoIP              GeoIPConfig `json:"geoip,omitempty"`
+	AllowedCORSDomains []string    `json:"allowed_cors_domains,omitempty"`
 }
 
 type ServerConfig struct {

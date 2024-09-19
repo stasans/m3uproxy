@@ -1,5 +1,5 @@
 # Stage 1: Build the Go binary
-FROM golang:1.22.3-alpine AS builder
+FROM golang:1.22.3-alpine AS go-builder
 
 # Set the working directory
 WORKDIR /app
@@ -14,22 +14,47 @@ RUN go mod download
 COPY . .
 RUN chmod +x scripts/*
 
+# Build the Go binaries
 RUN go build -o m3uproxy server/main.go
 RUN go build -o m3uproxycli cli/main.go
 
+# Stage 2: Build the React SPA
+FROM node:18-alpine AS spa-builder
+
+# Set the working directory
+WORKDIR /app
+
+# Copy the React application code
+COPY ./assets/player /app
+
+# Install dependencies and build the project
+RUN npm install && npm run build
+
+# Create a zip file of the SPA build output
+RUN apk add --no-cache zip && \
+    zip -r /app/player.zip /app/build
+
+# Stage 3: Final stage, build the final image
 FROM alpine:latest
 
-COPY --from=builder /app/m3uproxy /app/m3uproxy
-COPY --from=builder /app/m3uproxy /app/m3uproxycli
-COPY --from=builder /app/conf /app/conf
-COPY --from=builder /app/assets /app/assets
-COPY --from=builder /app/scripts/entrypoint.sh /app/entrypoint.sh
+# Copy Go binaries and other files from the go-builder stage
+COPY --from=go-builder /app/m3uproxy /app/m3uproxy
+COPY --from=go-builder /app/m3uproxycli /app/m3uproxycli
+COPY --from=go-builder /app/conf /app/conf
+COPY --from=go-builder /app/scripts/entrypoint.sh /app/entrypoint.sh
 
+# Copy the SPA zip file from spa-builder stage
+COPY --from=spa-builder /app/player.zip /app/assets/player.zip
+
+# Add necessary packages
 RUN apk --no-cache add ca-certificates ffmpeg bash && \
     mkdir -p /app/cache 
 
+# Set the working directory
 WORKDIR /app
 
+# Expose the application port
 EXPOSE 8080
 
+# Set the entrypoint script
 CMD ["/app/entrypoint.sh"]

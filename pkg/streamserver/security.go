@@ -13,7 +13,7 @@ var geoipDb *geoip2.Reader
 var geoipWhitelist map[string]bool
 var geoIPCidrWhitelist []*net.IPNet
 
-func configureGeoIp() error {
+func configureSecurity() error {
 
 	var err error
 
@@ -51,11 +51,17 @@ func cleanGeoIp() {
 	}
 }
 
-func geoip(next http.Handler) http.Handler {
+func secure(next http.Handler) http.Handler {
+
+	if len(Config.Security.AllowedCORSDomains) > 0 {
+		next = cors(next)
+	}
 
 	if geoipDb == nil {
 		return next
 	}
+
+	log.Println("GeoIP enabled")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
@@ -98,6 +104,22 @@ func geoip(next http.Handler) http.Handler {
 		if _, ok := geoipWhitelist[countryCode]; !ok {
 			log.Printf("Access Denied: %s, Country: %s\n", ip, countryCode)
 			http.Error(w, "Access Denied", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func cors(next http.Handler) http.Handler {
+	log.Println("CORS enabled")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		w.Header().Set("Access-Control-Allow-Origin", strings.Join(Config.Security.AllowedCORSDomains, ","))
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS, POST, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 

@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch M3UProxy Server",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "server/main.go",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "server",
+                "-c",
+                "dev/m3uproxy.json"
+            ]
+        },
+        {
+            "name": "Launch React SPA",
+            "type": "chrome",
+            "request": "launch",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/player",
+            "runtimeExecutable": "${workspaceFolder}/player/node_modules/.bin/react-scripts",
+            "runtimeArgs": [
+                "start"
+            ],
+            "sourceMaps": true,
+            "preLaunchTask": "npm: start",
+            "postDebugTask": "npm: stop",
+            "presentation": {
+                "group": "frontend",
+                "hidden": false
+            }
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Launch Full Stack (Go + React)",
+            "configurations": [
+                "Launch M3UProxy Server",
+                "Launch React SPA"
+            ]
+        }
+    ]
+}

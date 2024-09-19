@@ -251,13 +251,13 @@ func Run(configPath string) {
 		registerEpgRoutes(r)
 		registerStreamsRoutes(r)
 
-		if configureGeoIp() != nil {
+		if configureSecurity() != nil {
 			log.Println("GeoIP database not found, geo-location will not be available.")
 		}
 
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", Config.Port),
-			Handler: geoip(r),
+			Handler: secure(r),
 		}
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)
