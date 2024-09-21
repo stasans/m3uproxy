@@ -147,7 +147,7 @@ func serveAndRemap(mediaURI string, transport *http.Transport, headers map[strin
 			return
 		}
 
-		for i, _ := range m3uPlaylist.Entries {
+		for i := range m3uPlaylist.Entries {
 			uri, _ := url.Parse(m3uPlaylist.Entries[i].URI)
 
 			if uri.Scheme == "" {
