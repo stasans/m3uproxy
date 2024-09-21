@@ -35,7 +35,7 @@ function Player({ channel }) {
 
     return (
         <div>
-            <video ref={videoRef} controls autoPlay className="w-100" />
+            <video ref={videoRef} controls autoPlay className="w-100 player" />
         </div>
     );
 }

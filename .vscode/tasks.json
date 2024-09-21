@@ -30,8 +30,8 @@
                     ],
                     "background": {
                         "activeOnStart": true,
-                        "beginsPattern": "Starting the development server",
-                        "endsPattern": "Compiled successfully"
+                        "beginsPattern": "webpack-dev-server --no-open",
+                        "endsPattern": "compiled successfully"
                     }
                 }
             ]
@@ -39,7 +39,7 @@
         {
             "label": "npm: stop",
             "type": "shell",
-            "command": "kill $(lsof -t -i:3000)",
+            "command": "kill $(lsof -t -i:3000) && kill $(lsof -t -i:8080)",
             "group": {
                 "kind": "build",
                 "isDefault": false

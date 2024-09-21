@@ -16,14 +16,10 @@
         },
         {
             "name": "Launch React SPA",
-            "type": "chrome",
+            "type": "msedge",
             "request": "launch",
             "url": "http://localhost:3000",
             "webRoot": "${workspaceFolder}/player",
-            "runtimeExecutable": "${workspaceFolder}/player/node_modules/.bin/react-scripts",
-            "runtimeArgs": [
-                "start"
-            ],
             "sourceMaps": true,
             "preLaunchTask": "npm: start",
             "postDebugTask": "npm: stop",
@@ -39,7 +35,7 @@
             "configurations": [
                 "Launch M3UProxy Server",
                 "Launch React SPA"
-            ]
+            ],
         }
     ]
 }

@@ -1,0 +1,108 @@
+body {
+    background-color: #171d22;
+}
+
+#app {
+    background-color: #171d22;
+    color: #fff;
+    max-width: 100vw;
+    max-height: 100vw;
+}
+
+.playlist {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    max-height: 100vh;
+}
+
+.playlist input {
+    justify-content: center;
+    align-items: center;
+    max-height: 10vh;
+}
+
+.playlist .scroll {
+    color: #ffffff40;
+    cursor: pointer;
+    max-height: 10vh;
+}
+
+.playlist .scroll_down {
+    top: 10;
+    left: 0;
+    z-index: 1;
+}
+
+.playlist .scroll_up {
+    bottom: 0;
+    left: 0;
+    z-index: 1;
+}
+
+.playlist .scroll:hover {
+    background-color: #2e3d4b40;
+    color: #ffffff;
+}
+
+.playlist .scroll span {
+    font-size: 43px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.playlist .channels {
+    overflow: hidden;
+    max-height: 70vh;
+}
+
+.playlist .channel:hover {
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+    transition: box-shadow 0.3s ease-in-out;
+}
+
+.playlist .channel:hover {
+    cursor: pointer;
+    background-color: #3e4d5b;
+}
+
+.playlist .channel {
+    align-items: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 10vh;
+}
+
+.playlist .title {
+    font-size: 1.2rem;
+}
+
+.playlist .logo {
+    max-height: 10vh;
+    max-width: 10vh;
+}
+
+.content {
+    height: 100vh;
+}
+
+.content .toolbar {
+    height: 5vh;
+}
+
+.content .toolbar .channel_title {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.player {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+    height: 95vh;
+}

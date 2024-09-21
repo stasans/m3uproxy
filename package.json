@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "bootstrap": "^5.3.3",
+    "jquery": "^3.7.1",
+    "react-bootstrap": "^2.10.4",
+    "react-scripts": "^5.0.1",
+    "shaka-player": "^4.11.4"
+  }
+}

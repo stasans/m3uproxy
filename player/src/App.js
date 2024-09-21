@@ -75,6 +75,7 @@ function App() {
     };
 
     const handleChannelClick = (channel) => {
+        document.getElementById('channel_title').innerText = channel.tvgName;
         setSelectedChannel(channel);
     };
 
@@ -88,14 +89,20 @@ function App() {
     return (
         <div className="container-fluid">
             <div className="row d-flex justify-content-center">
-                <Button onClick={handleShow}>Open Configuration</Button>
                 <Config show={showConfig} onClose={handleClose} onSave={handleSave} />
-                <Playlist
-                    items={playlistItems}
-                    onChannelClick={handleChannelClick}
-                    onUpdatePlaylist={fetchPlaylist}
-                />
-                <div className="col-md-10">
+                <div className="col-md-2 sidebar">
+                    <Playlist
+                        items={playlistItems}
+                        onChannelClick={handleChannelClick}
+                        onUpdatePlaylist={fetchPlaylist}
+                    >
+                    </Playlist>
+                </div>
+                <div className="col-md-10 content">
+                    <div className="d-flex justify-content-between align-items-center toolbar">
+                        <span id="channel_title" className="mb-0"></span>
+                        <Button onClick={handleShow}><i className="bi bi-gear-fill"></i></Button>
+                    </div>
                     <Player channel={selectedChannel} />
                 </div>
             </div>
