@@ -1,5 +1,4 @@
 .git
 .gitignore
-streams.m3u
-epg.xml
-users.json
+player/node_modules
+player/dist

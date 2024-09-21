@@ -67,14 +67,14 @@ jobs:
 
       - name: Install Node.js dependencies
         run: |
-          cd assets/player
+          cd player
           npm install
 
       - name: Build and zip the SPA
         run: |
-          cd assets/player
+          cd player
           npm run build
-          zip -r ../../player.zip build
+          zip -jr ../player.zip dist/
 
       # Create a new release
       - name: Create release

@@ -25,14 +25,14 @@ FROM node:18-alpine AS spa-builder
 WORKDIR /app
 
 # Copy the React application code
-COPY ./assets/player /app
+COPY ./player /app
 
 # Install dependencies and build the project
 RUN npm install && npm run build
 
 # Create a zip file of the SPA build output
 RUN apk add --no-cache zip && \
-    zip -r /app/player.zip /app/build
+    zip -jr /app/player.zip /app/dist
 
 # Stage 3: Final stage, build the final image
 FROM alpine:latest

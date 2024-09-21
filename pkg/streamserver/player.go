@@ -102,6 +102,9 @@ func registerPlayerRoutes(r *mux.Router) *mux.Router {
 	if err := CachePlayer(); err != nil {
 		return r
 	}
-	r.HandleFunc("/player/*", playerRequest)
+	r.HandleFunc("/player", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/player/index.html", http.StatusSeeOther)
+	})
+	r.PathPrefix("/player/").HandlerFunc(playerRequest)
 	return r
 }

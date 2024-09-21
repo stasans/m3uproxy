@@ -42,32 +42,42 @@ function Playlist({ items, onChannelClick }) {
     }, [items]);
 
     useEffect(() => {
-        let scrollSpeed = 0; // Variable to track scroll speed
+        let scrollDir = 0;
+        let scrollSpeed = 0;
         let animationFrameId = null;
 
         const scrollContent = () => {
-            if (scrollSpeed !== 0 && channelsRef.current) {
-                console.log(scrollSpeed);
-                channelsRef.current.scrollBy({ top: scrollSpeed, behavior: 'auto' });
-                console.log(scrollSpeed);
-
+            if (!channelsRef.current) {
+                animationFrameId = requestAnimationFrame(scrollContent);
+                return;
             }
-            animationFrameId = requestAnimationFrame(scrollContent); // Loop the scrolling
+            if ((scrollDir === -1 || scrollDir === 1)) {
+                scrollSpeed += scrollDir * 0.5;
+                if (Math.abs(scrollSpeed) > 20) {
+                    scrollSpeed = 20 * scrollDir;
+                }
+            } else {
+                scrollSpeed *= 0.9; // Decelerate scrolling
+            }
+            if (scrollSpeed !== 0) {
+                channelsRef.current.scrollBy({ top: scrollSpeed, behavior: 'auto' });
+            }
+            animationFrameId = requestAnimationFrame(scrollContent);
         };
 
         // Start the background scrolling task
         scrollContent();
 
         const handleMouseEnterTop = () => {
-            scrollSpeed = -20; // Negative speed for upward scrolling (adjust as needed)
+            scrollDir = -1;
         };
 
         const handleMouseEnterBottom = () => {
-            scrollSpeed = 20; // Positive speed for downward scrolling (adjust as needed)
+            scrollDir = 1;
         };
 
         const handleMouseLeave = () => {
-            scrollSpeed = 0; // Stop scrolling when mouse leaves trigger areas
+            scrollDir = 0;
         };
 
         // Attach event listeners to the trigger areas
@@ -79,9 +89,15 @@ function Playlist({ items, onChannelClick }) {
         }
 
         if (channelsRef.current) {
-            channelsRef.current.addEventListener('mousewheel', (event) => {
-                scrollSpeed = event.deltaY; // Set scroll speed based on mouse wheel delta
-            });
+            if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) {
+                channelsRef.current.addEventListener('wheel', (event) => {
+                    scrollSpeed = event.deltaY;
+                });
+            } else {
+                channelsRef.current.addEventListener('mousewheel', (event) => {
+                    scrollSpeed = event.deltaY;
+                });
+            }
         }
 
         return () => {
