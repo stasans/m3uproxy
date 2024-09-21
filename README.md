@@ -38,7 +38,8 @@
 ### `/player`
 - **Description**: Serve a simple HTML player to play the streams.
 - **Access**: Public.
-- **Usage**: Used to check the health of the server.
+
+![Alt text](resources/player.png "Player screenshot")
 
 ## Geo-Blocking
 
