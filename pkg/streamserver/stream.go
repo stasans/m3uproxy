@@ -153,7 +153,7 @@ func streamRequest(w http.ResponseWriter, r *http.Request) {
 
 	stream := streams[streamID]
 	if !stream.active {
-		noServiceStream.Serve(w, r)
+		http.Error(w, "Stream not active", http.StatusNotFound)
 		return
 	}
 	stream.serve(w, r)

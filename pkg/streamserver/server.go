@@ -35,7 +35,6 @@ import (
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/a13labs/m3uproxy/pkg/ffmpeg"
 
 	"github.com/gorilla/mux"
 )
@@ -47,8 +46,7 @@ var (
 	restartServer     = make(chan bool)
 	running           = false
 
-	noServiceStream *ffmpegStream
-	updateTimer     *time.Timer
+	updateTimer *time.Timer
 )
 
 const m3uPlaylist = "master.m3u8"
@@ -199,27 +197,12 @@ func Run(configPath string) {
 
 		log.Printf("Starting stream server\n")
 		log.Printf("Playlist: %s\n", Config.Playlist)
-		log.Printf("No Service: %s\n", Config.NoServiceImage)
 		log.Printf("EPG: %s\n", Config.Epg)
 
 		err := auth.InitializeAuth(Config.Auth)
 		if err != nil {
 			log.Printf("Failed to initialize authentication: %s\n", err)
 			return
-		}
-
-		// Initialize FFmpeg
-		if err := ffmpeg.Initialize(); err != nil {
-			log.Fatalf("Failed to initialize FFmpeg: %v\n", err)
-		}
-
-		// Start the no service stream
-		log.Printf("Generating HLS for no service image\n")
-		noServiceStream = newImageStream(Config.NoServiceImage, "no_service")
-
-		if err := noServiceStream.start(); err != nil {
-			log.Fatalf("Failed to start no service stream: %v\n", err)
-			noServiceStream = nil
 		}
 
 		updateTimer = time.NewTimer(time.Duration(Config.ScanTime) * time.Second)
@@ -280,13 +263,6 @@ func Run(configPath string) {
 			quitServer = false
 		}
 
-		// Stop the no service stream
-		if noServiceStream != nil {
-			if err := noServiceStream.stop(); err != nil {
-				log.Fatalf("Failed to stop no service stream: %v\n", err)
-			}
-			noServiceStream.free()
-		}
 		updateTimer.Stop()
 		running = false
 		stopStreamLoading <- true

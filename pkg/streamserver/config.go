@@ -38,16 +38,15 @@ type SecurityConfig struct {
 }
 
 type ServerConfig struct {
-	Port           int             `json:"port"`
-	Playlist       string          `json:"playlist"`
-	Epg            string          `json:"epg"`
-	Timeout        int             `json:"default_timeout,omitempty"`
-	NumWorkers     int             `json:"num_workers,omitempty"`
-	NoServiceImage string          `json:"no_service_image,omitempty"`
-	ScanTime       int             `json:"scan_time,omitempty"`
-	Security       SecurityConfig  `json:"security,omitempty"`
-	Auth           json.RawMessage `json:"auth"`
-	LogFile        string          `json:"log_file,omitempty"`
+	Port       int             `json:"port"`
+	Playlist   string          `json:"playlist"`
+	Epg        string          `json:"epg"`
+	Timeout    int             `json:"default_timeout,omitempty"`
+	NumWorkers int             `json:"num_workers,omitempty"`
+	ScanTime   int             `json:"scan_time,omitempty"`
+	Security   SecurityConfig  `json:"security,omitempty"`
+	Auth       json.RawMessage `json:"auth"`
+	LogFile    string          `json:"log_file,omitempty"`
 }
 
 var (
