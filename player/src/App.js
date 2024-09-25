@@ -31,7 +31,7 @@ function App() {
         } else {
             const headers = { Authorization: 'Basic ' + btoa(`${username}:${password}`) };
 
-            if (process.env.NODE_ENV === 'development') {
+            if (__DEV__) {
                 fetch('http://localhost:8080/streams.m3u', { headers })
                     .then(response => response.text())
                     .then(data => {
