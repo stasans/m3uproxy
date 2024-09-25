@@ -1,12 +1,27 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const TerserPlugin = require("terser-webpack-plugin");
+const { env } = require('process');
 
 module.exports = {
-    mode: 'development',
+    mode: env.NODE_ENV === 'development' ? 'development' : 'production',
     entry: './src/index.js',
     output: {
         path: path.resolve(__dirname, 'dist'),
-        filename: 'bundle.js',
+        filename: env.NODE_ENV === 'development' ? 'bundle.js' : '[name].bundle.js',
+        clean: env.NODE_ENV === 'development' ? false : true,
+    },
+    optimization: env.NODE_ENV === 'development' ? {} : {
+        splitChunks: {
+            chunks: 'all',
+        },
+        minimize: true,
+        minimizer: [new TerserPlugin()],
+    },
+    performance: env.NODE_ENV === 'development' ? {} : {
+        hints: false,
+        maxEntrypointSize: 512000,
+        maxAssetSize: 512000
     },
     module: {
         rules: [
@@ -29,7 +44,6 @@ module.exports = {
         }),
     ],
     devServer: {
-        // Replace 'contentBase' with 'static'
         static: {
             directory: path.join(__dirname, 'public'), // Adjust this to point to your static files folder
         },

@@ -28,7 +28,9 @@ WORKDIR /app
 COPY ./player /app
 
 # Install dependencies and build the project
-RUN npm install && npm run build
+RUN npm install 
+ARG NODE_ENV=production
+RUN npm run build
 
 # Create a zip file of the SPA build output
 RUN apk add --no-cache zip && \

@@ -11,7 +11,10 @@
             },
             "isBackground": true,
             "options": {
-                "cwd": "${workspaceFolder}/player"
+                "cwd": "${workspaceFolder}/player",
+                "env": {
+                    "NODE_ENV": "development"
+                }
             },
             "problemMatcher": [
                 {
