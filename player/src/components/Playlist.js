@@ -21,6 +21,7 @@ function Playlist({ items, onChannelClick }) {
         });
     };
 
+
     useEffect(() => {
         const loadImages = async () => {
             for (const item of items) {
@@ -80,22 +81,43 @@ function Playlist({ items, onChannelClick }) {
             scrollDir = 0;
         };
 
-        // Attach event listeners to the trigger areas
-        if (topTriggerRef.current && bottomTriggerRef.current) {
-            topTriggerRef.current.addEventListener('mouseenter', handleMouseEnterTop);
-            bottomTriggerRef.current.addEventListener('mouseenter', handleMouseEnterBottom);
-            topTriggerRef.current.addEventListener('mouseleave', handleMouseLeave);
-            bottomTriggerRef.current.addEventListener('mouseleave', handleMouseLeave);
-        }
+        // Attach event listeners to the trigger areas when on a desktop browser
+        if (navigator.userAgent.toLowerCase().indexOf('mobile') === -1) {
+            if (topTriggerRef.current && bottomTriggerRef.current) {
+                topTriggerRef.current.addEventListener('mouseenter', handleMouseEnterTop);
+                bottomTriggerRef.current.addEventListener('mouseenter', handleMouseEnterBottom);
+                topTriggerRef.current.addEventListener('mouseleave', handleMouseLeave);
+                bottomTriggerRef.current.addEventListener('mouseleave', handleMouseLeave);
+            }
 
-        if (channelsRef.current) {
-            if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) {
-                channelsRef.current.addEventListener('wheel', (event) => {
-                    scrollSpeed = event.deltaY;
+            if (channelsRef.current) {
+                if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) {
+                    channelsRef.current.addEventListener('wheel', (event) => {
+                        scrollSpeed = event.deltaY;
+                    });
+                } else {
+                    channelsRef.current.addEventListener('mousewheel', (event) => {
+                        scrollSpeed = event.deltaY;
+                    });
+                }
+            }
+        } else {
+            // Hide scroll triggers on mobile devices and tablets
+            if (topTriggerRef.current && bottomTriggerRef.current) {
+                topTriggerRef.current.style.display = 'none';
+                bottomTriggerRef.current.style.display = 'none';
+            }
+            // on mobile devices, scroll the channels container when the user swipes
+            if (channelsRef.current) {
+                let touchStartY = 0;
+                channelsRef.current.addEventListener('touchstart', (event) => {
+                    touchStartY = event.touches[0].clientY;
                 });
-            } else {
-                channelsRef.current.addEventListener('mousewheel', (event) => {
-                    scrollSpeed = event.deltaY;
+                channelsRef.current.addEventListener('touchmove', (event) => {
+                    const touchEndY = event.touches[0].clientY;
+                    const deltaY = touchEndY - touchStartY;
+                    channelsRef.current.scrollBy({ top: -deltaY, behavior: 'auto' });
+                    touchStartY = touchEndY;
                 });
             }
         }
@@ -105,15 +127,38 @@ function Playlist({ items, onChannelClick }) {
                 cancelAnimationFrame(animationFrameId); // Clean up animation frame on unmount
             }
             // Remove event listeners to avoid memory leaks
-            if (topTriggerRef.current && bottomTriggerRef.current) {
-                topTriggerRef.current.removeEventListener('mouseenter', handleMouseEnterTop);
-                bottomTriggerRef.current.removeEventListener('mouseenter', handleMouseEnterBottom);
-                topTriggerRef.current.removeEventListener('mouseleave', handleMouseLeave);
-                bottomTriggerRef.current.removeEventListener('mouseleave', handleMouseLeave);
+            if (channelsRef.current) {
+                if (topTriggerRef.current && bottomTriggerRef.current) {
+                    topTriggerRef.current.removeEventListener('mouseenter', handleMouseEnterTop);
+                    bottomTriggerRef.current.removeEventListener('mouseenter', handleMouseEnterBottom);
+                    topTriggerRef.current.removeEventListener('mouseleave', handleMouseLeave);
+                    bottomTriggerRef.current.removeEventListener('mouseleave', handleMouseLeave);
+                }
+
+                if (navigator.userAgent.toLowerCase().indexOf('mobile') === -1) {
+                    if (navigator.userAgent.toLowerCase().indexOf('firefox') > -1) {
+                        channelsRef.current.removeEventListener('wheel', (event) => {
+                            scrollSpeed = event.deltaY;
+                        });
+                    } else {
+                        channelsRef.current.removeEventListener('mousewheel', (event) => {
+                            scrollSpeed = event.deltaY;
+                        });
+                    }
+                } else {
+                    channelsRef.current.removeEventListener('touchstart', (event) => {
+                        touchStartY = event.touches[0].clientY;
+                    });
+                    channelsRef.current.removeEventListener('touchmove', (event) => {
+                        const touchEndY = event.touches[0].clientY;
+                        const deltaY = touchEndY - touchStartY;
+                        channelsRef.current.scrollBy({ top: -deltaY, behavior: 'auto' });
+                        touchStartY = touchEndY;
+                    });
+                }
             }
         };
-    }, []);
-
+    }, []); 
 
     return (
         <div className="playlist">

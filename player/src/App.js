@@ -90,7 +90,7 @@ function App() {
         <div className="container-fluid">
             <div className="row d-flex justify-content-center">
                 <Config show={showConfig} onClose={handleClose} onSave={handleSave} />
-                <div className="col-md-2 sidebar">
+                <div className="col-sm-2 sidebar">
                     <Playlist
                         items={playlistItems}
                         onChannelClick={handleChannelClick}
@@ -98,7 +98,7 @@ function App() {
                     >
                     </Playlist>
                 </div>
-                <div className="col-md-10 content">
+                <div className="col-sm-10 content">
                     <div className="d-flex justify-content-between align-items-center toolbar">
                         <span id="channel_title" className="mb-0"></span>
                         <Button onClick={handleShow}><i className="bi bi-gear-fill"></i></Button>
