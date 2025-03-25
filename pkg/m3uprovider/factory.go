@@ -121,7 +121,6 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 			}
 			masterPlaylist.Entries = append(masterPlaylist.Entries, entry)
 		}
-
 	}
 
 	if len(config.ChannelOrder) > 0 {

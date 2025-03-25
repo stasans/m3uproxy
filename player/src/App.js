@@ -30,20 +30,12 @@ function App() {
             return;
         } else {
             const headers = { Authorization: 'Basic ' + btoa(`${username}:${password}`) };
-
+            var streamsUrl = '/streams.m3u';
             if (__DEV__) {
-                fetch('http://localhost:8080/streams.m3u', { headers })
-                    .then(response => response.text())
-                    .then(data => {
-                        const items = parseM3U(data);
-                        if (items.length === 0) { setShowConfig(true) } else { setPlaylistItems(items); }
-                    })
-                    .catch(() => setShowConfig(true));
-
-                return;
+                streamsUrl = 'http://localhost:8080/streams.m3u';
             }
 
-            fetch('/streams.m3u', { headers })
+            fetch(streamsUrl, { headers })
                 .then(response => response.text())
                 .then(data => {
                     const items = parseM3U(data);
@@ -76,6 +68,7 @@ function App() {
 
     const handleChannelClick = (channel) => {
         document.getElementById('channel_title').innerText = channel.tvgName;
+        localStorage.setItem('lastChannel', JSON.stringify(channel));
         setSelectedChannel(channel);
     };
 

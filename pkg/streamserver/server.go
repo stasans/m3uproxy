@@ -49,7 +49,7 @@ var (
 	updateTimer *time.Timer
 )
 
-const m3uPlaylist = "master.m3u8"
+// const m3uPlaylist = "master.m3u8"
 
 func LoadStreams() error {
 
@@ -232,6 +232,7 @@ func Run(configPath string) {
 		registerPlaylistRoutes(r)
 		registerPlayerRoutes(r)
 		registerEpgRoutes(r)
+		registerLicenseRoutes(r)
 		registerStreamsRoutes(r)
 
 		if configureSecurity() != nil {

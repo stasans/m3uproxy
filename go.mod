@@ -8,6 +8,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/spf13/cobra v1.8.1
+	github.com/unki2aut/go-xsd-types v0.0.0-20200220223938-30e5405398f8
 )
 
 require (

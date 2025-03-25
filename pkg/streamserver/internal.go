@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	mpd "github.com/a13labs/m3uproxy/pkg/mpdparser"
 	"github.com/elnormous/contenttype"
 )
 
@@ -64,34 +65,30 @@ func executeRequest(method, URI string, transport *http.Transport, headers map[s
 		return nil, errors.New("invalid server status code")
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, errors.New("no content")
-	}
-
 	return resp, nil
 }
 
-func verifyStream(mediaURI string, transport *http.Transport, headers map[string]string) bool {
+func verifyStream(mediaURI string, transport *http.Transport, headers map[string]string) (contenttype.MediaType, error) {
 
 	resp, err := executeRequest("GET", mediaURI, transport, headers)
 	if err != nil {
-		return false
+		return contenttype.MediaType{}, err
 	}
 
 	ct := resp.Header.Get("Content-Type")
 	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
 	if err != nil {
-		return false
+		return contenttype.MediaType{}, err
 	}
 
 	if mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl" {
 		m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
 		if err != nil {
-			return false
+			return contenttype.MediaType{}, err
 		}
 
 		if len(m3uPlaylist.Entries) == 0 {
-			return false
+			return contenttype.MediaType{}, errors.New("empty playlist")
 		}
 
 		uri, _ := url.Parse(m3uPlaylist.Entries[0].URI)
@@ -106,9 +103,11 @@ func verifyStream(mediaURI string, transport *http.Transport, headers map[string
 		return verifyStream(uri.String(), transport, headers)
 	}
 
-	return true
+	return mediaType, nil
 }
 
+// serveAndRemap serves the mediaURI and remaps the URLs in the playlist to point to the proxy cache url
+// instead of the original URL using base64 encoding.
 func serveAndRemap(mediaURI string, transport *http.Transport, headers map[string]string, w http.ResponseWriter) {
 
 	resp, err := executeRequest("GET", mediaURI, transport, headers)
@@ -125,46 +124,97 @@ func serveAndRemap(mediaURI string, transport *http.Transport, headers map[strin
 	}
 
 	w.Header().Set("Content-Type", ct)
-	if mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl" {
-
-		m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
-
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		resp.Body.Close()
-
-		var filePrefix string
-
-		switch m3uPlaylist.Type {
-		case "master":
-			filePrefix = "master.m3u8"
-		case "media":
-			filePrefix = "media.ts"
-		default:
-			log.Printf("Unknown m3u8 playlist type: %v\n", m3uPlaylist.Type)
-			return
-		}
-
-		for i := range m3uPlaylist.Entries {
-			uri, _ := url.Parse(m3uPlaylist.Entries[i].URI)
-
-			if uri.Scheme == "" {
-				uri.Scheme = resp.Request.URL.Scheme
-				uri.Host = resp.Request.URL.Host
-				basePath := path.Dir(resp.Request.URL.Path)
-				uri.Path = path.Join(basePath, uri.Path)
-			}
-
-			remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
-			m3uPlaylist.Entries[i].URI = fmt.Sprintf("%s?cache=%s", filePrefix, remap)
-		}
-
-		m3uPlaylist.WriteTo(w)
-	} else {
+	switch {
+	case mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl":
+		remapM38U(w, resp)
+	case mediaType.Subtype == "dash+xml":
+		remapMPD(w, resp)
+	default:
 		io.Copy(w, resp.Body)
 	}
+}
+
+func remapM38U(w http.ResponseWriter, resp *http.Response) {
+	m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	resp.Body.Close()
+
+	var filePrefix string
+
+	switch m3uPlaylist.Type {
+	case "master":
+		filePrefix = "master.m3u8"
+	case "media":
+		filePrefix = "media.ts"
+	default:
+		log.Printf("Unknown m3u8 playlist type: %v\n", m3uPlaylist.Type)
+		return
+	}
+
+	for i := range m3uPlaylist.Entries {
+		uri, _ := url.Parse(m3uPlaylist.Entries[i].URI)
+
+		if uri.Scheme == "" {
+			uri.Scheme = resp.Request.URL.Scheme
+			uri.Host = resp.Request.URL.Host
+			basePath := path.Dir(resp.Request.URL.Path)
+			uri.Path = path.Join(basePath, uri.Path)
+		}
+
+		remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
+		m3uPlaylist.Entries[i].URI = fmt.Sprintf("%s?cache=%s", filePrefix, remap)
+	}
+
+	m3uPlaylist.WriteTo(w)
+}
+
+func remapMPD(w http.ResponseWriter, resp *http.Response) {
+
+	mpdPlaylist, err := mpd.DecodeFromReader(resp.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	for i := range mpdPlaylist.Period {
+		for j := range mpdPlaylist.Period[i].AdaptationSets {
+			for k := range mpdPlaylist.Period[i].AdaptationSets[j].Representations {
+
+				if len(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL) == 0 {
+					uri := new(url.URL)
+					uri.Scheme = resp.Request.URL.Scheme
+					uri.Host = resp.Request.URL.Host
+					basePath := path.Dir(resp.Request.URL.Path)
+					uri.Path = path.Join(basePath, uri.Path)
+					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
+					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("mpd-%s/", remap)})
+					continue
+				} else {
+					for l := range mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL {
+						currentBaseURL := mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value
+
+						uri, _ := url.Parse(currentBaseURL)
+
+						if uri.Scheme == "" {
+							uri.Scheme = resp.Request.URL.Scheme
+							uri.Host = resp.Request.URL.Host
+							basePath := path.Dir(resp.Request.URL.Path)
+							uri.Path = path.Join(basePath, uri.Path)
+						}
+
+						remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
+						mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value = fmt.Sprintf("mpd-%s/", remap)
+					}
+				}
+			}
+		}
+	}
+
+	mpdPlaylist.WriteTo(w)
 }
 
 func loadContent(filePath string) (string, error) {
