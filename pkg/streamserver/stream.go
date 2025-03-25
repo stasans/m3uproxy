@@ -38,7 +38,9 @@ import (
 
 type streamStruct struct {
 	index            int
+	mediaType        contenttype.MediaType
 	m3u              m3uparser.M3UEntry
+	extension        string
 	active           bool
 	mux              *sync.Mutex
 	headers          map[string]string
@@ -64,6 +66,7 @@ var supportedMediaTypes = []contenttype.MediaType{
 	contenttype.NewMediaType("video/m2ts"),
 	contenttype.NewMediaType("video/mp4"),
 	contenttype.NewMediaType("binary/octet-stream"),
+	contenttype.NewMediaType("application/dash+xml"),
 }
 
 func (stream *streamStruct) healthCheck() {
@@ -79,10 +82,22 @@ func (stream *streamStruct) healthCheck() {
 	}
 	stream.mux.Unlock()
 
-	streamActive := verifyStream(stream.m3u.URI, stream.transport, stream.headers)
+	mediaType, err := verifyStream(stream.m3u.URI, stream.transport, stream.headers)
+	if err != nil {
+		log.Printf("Stream %d is not healthy: %s\n", stream.index, err)
+	}
 
 	stream.mux.Lock()
-	stream.active = streamActive
+	switch {
+	case mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl":
+		stream.extension = "m3u8"
+	case mediaType.Subtype == "dash+xml":
+		stream.extension = "mpd"
+	default:
+		stream.extension = mediaType.Subtype
+	}
+	stream.mediaType = mediaType
+	stream.active = err == nil
 	stream.mux.Unlock()
 }
 
@@ -90,15 +105,35 @@ func (stream *streamStruct) serve(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 
+	// Cache is a base64 encoded URL (that points to the original URL)
 	cache := r.URL.Query().Get("cache")
 
 	var uri *url.URL
 	if cache == "" {
-		if vars["path"] != "master.m3u8" {
+		path := vars["path"]
+		if path[0:4] == "mpd/" {
+			// get index of the first slash after mpd/
+			index := 4
+			for i := 4; i < len(path); i++ {
+				if path[i] == '/' {
+					index = i
+					break
+				}
+			}
+			baseUrl, err := base64.URLEncoding.DecodeString(path[4 : len(path)-index])
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			targetUrl := path[index+1:]
+			uri, _ = url.Parse(string(baseUrl) + "/" + targetUrl)
+		} else if vars["path"] == "master."+stream.extension {
+			// if the cache is empty, we must be serving the master playlist
+			uri, _ = url.Parse(stream.m3u.URI)
+		} else {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		uri, _ = url.Parse(stream.m3u.URI)
 	} else {
 
 		originalUrlBytes, err := base64.URLEncoding.DecodeString(cache)
