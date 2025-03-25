@@ -65,10 +65,6 @@ func executeRequest(method, URI string, transport *http.Transport, headers map[s
 		return nil, errors.New("invalid server status code")
 	}
 
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, errors.New("no content")
-	}
-
 	return resp, nil
 }
 
@@ -195,24 +191,24 @@ func remapMPD(w http.ResponseWriter, resp *http.Response) {
 					basePath := path.Dir(resp.Request.URL.Path)
 					uri.Path = path.Join(basePath, uri.Path)
 					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
-					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("mpd/%s", remap)})
+					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("mpd-%s/", remap)})
 					continue
-				}
+				} else {
+					for l := range mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL {
+						currentBaseURL := mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value
 
-				for l := range mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL {
-					currentBaseURL := mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value
+						uri, _ := url.Parse(currentBaseURL)
 
-					uri, _ := url.Parse(currentBaseURL)
+						if uri.Scheme == "" {
+							uri.Scheme = resp.Request.URL.Scheme
+							uri.Host = resp.Request.URL.Host
+							basePath := path.Dir(resp.Request.URL.Path)
+							uri.Path = path.Join(basePath, uri.Path)
+						}
 
-					if uri.Scheme == "" {
-						uri.Scheme = resp.Request.URL.Scheme
-						uri.Host = resp.Request.URL.Host
-						basePath := path.Dir(resp.Request.URL.Path)
-						uri.Path = path.Join(basePath, uri.Path)
+						remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
+						mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value = fmt.Sprintf("mpd-%s/", remap)
 					}
-
-					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
-					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value = fmt.Sprintf("mpd/%s", remap)
 				}
 			}
 		}

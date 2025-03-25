@@ -35,6 +35,7 @@ import (
 var (
 	m3uCache       *m3uparser.M3UPlaylist
 	playlistConfig *m3uprovider.PlaylistConfig
+	licenseManger  *streamLicenseManager
 )
 
 func LoadPlaylist() error {
@@ -47,6 +48,42 @@ func LoadPlaylist() error {
 	m3uCache, err = m3uprovider.Load(playlistConfig)
 	if err != nil {
 		return err
+	}
+
+	// Load licenses
+	// For now we just support processing clearkey licenses and KODIPROP tags
+	for _, entry := range m3uCache.Entries {
+		keyType, keyId, keyValue := "", "", ""
+		for _, tag := range entry.Tags {
+			if tag.Tag == "KODIPROP" {
+				if strings.HasPrefix(tag.Value, "inputstream.adaptive.license_type=") {
+					parts := strings.Split(tag.Value, "=")
+					if len(parts) == 2 {
+						keyType = parts[1]
+					}
+					continue
+				}
+				if strings.HasPrefix(tag.Value, "inputstream.adaptive.license_key=") {
+
+					if keyType == "org.w3.clearkey" {
+						parts := strings.Split(tag.Value, "=")
+						if len(parts) == 2 {
+							licenseKey := parts[1]
+							keyId = strings.Split(licenseKey, ":")[0]
+							keyValue = strings.Split(licenseKey, ":")[1]
+
+							if licenseManger == nil {
+								licenseManger = newStreamLicenseManager()
+							}
+							log.Printf("Found license, adding license key with id %s\n", keyId)
+							licenseManger.addLicense("clearkey", keyId, keyValue)
+							keyType, keyId, keyValue = "", "", ""
+							break
+						}
+					}
+				}
+			}
+		}
 	}
 
 	log.Printf("Loaded %d streams from %s\n", m3uCache.StreamCount(), Config.Playlist)
@@ -95,7 +132,9 @@ func playlistRequest(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		uri := fmt.Sprintf("%s://%s/%s/%d/%s", scheme, r.Host, token, i, m3uPlaylist)
+		masterPlaylist := "master." + stream.extension
+
+		uri := fmt.Sprintf("%s://%s/%s/%d/%s", scheme, r.Host, token, i, masterPlaylist)
 		if stream.disableRemap {
 			uri = stream.m3u.URI
 		}

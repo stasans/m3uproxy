@@ -111,7 +111,7 @@ func (stream *streamStruct) serve(w http.ResponseWriter, r *http.Request) {
 	var uri *url.URL
 	if cache == "" {
 		path := vars["path"]
-		if path[0:4] == "mpd/" {
+		if path[0:4] == "mpd-" {
 			// get index of the first slash after mpd/
 			index := 4
 			for i := 4; i < len(path); i++ {
@@ -120,7 +120,8 @@ func (stream *streamStruct) serve(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 			}
-			baseUrl, err := base64.URLEncoding.DecodeString(path[4 : len(path)-index])
+			encodedUrl := path[4:index]
+			baseUrl, err := base64.URLEncoding.DecodeString(encodedUrl)
 			if err != nil {
 				w.WriteHeader(http.StatusNotFound)
 				return

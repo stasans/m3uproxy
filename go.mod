@@ -8,13 +8,12 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/oschwald/geoip2-golang v1.11.0
 	github.com/spf13/cobra v1.8.1
+	github.com/unki2aut/go-xsd-types v0.0.0-20200220223938-30e5405398f8
 )
 
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/oschwald/maxminddb-golang v1.13.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/unki2aut/go-mpd v0.0.0-20250218132413-c6a2d2d492f4 // indirect
-	github.com/unki2aut/go-xsd-types v0.0.0-20200220223938-30e5405398f8 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 )
