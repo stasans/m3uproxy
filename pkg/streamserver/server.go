@@ -29,18 +29,25 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/streamserver/stream"
 
 	"github.com/gorilla/mux"
 )
 
+type streamEntry struct {
+	index  int
+	stream stream.Stream
+}
+
 var (
-	streams           = make([]*streamStruct, 0)
+	streams           = make([]*streamEntry, 0)
 	streamsMutex      sync.Mutex
 	stopStreamLoading = make(chan bool)
 	restartServer     = make(chan bool)
@@ -57,10 +64,10 @@ func LoadStreams() error {
 		return err
 	}
 
-	streamList := make([]*streamStruct, 0)
+	streamList := make([]*streamEntry, 0)
 
 	var wg sync.WaitGroup
-	var streamsChan = make(chan *streamStruct)
+	var streamsChan = make(chan *streamEntry)
 
 	stopWorkers := make(chan bool)
 	for i := 0; i < Config.NumWorkers; i++ {
@@ -153,17 +160,22 @@ func LoadStreams() error {
 				// Clear non-standard tags
 				entry.ClearTags()
 
-				stream := streamStruct{
-					index:            i,
-					m3u:              entry,
-					active:           false,
-					headers:          headers,
-					httpProxy:        proxy,
-					forceKodiHeaders: forceKodiHeaders,
-					radio:            radio == "true",
-					mux:              &sync.Mutex{},
-					transport:        transport,
-					disableRemap:     disableRemap,
+				stream := streamEntry{
+					index: i,
+					stream: stream.NewStream(
+						entry,
+						headers,
+						proxy,
+						forceKodiHeaders,
+						radio != "",
+						transport,
+						disableRemap,
+						Config.Timeout,
+					),
+				}
+				if stream.stream == nil {
+					log.Printf("Failed to create stream for %s\n", entry.URI)
+					continue
 				}
 
 				streamList = append(streamList, &stream)
@@ -299,4 +311,49 @@ func healthCheckRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func streamRequest(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	token := vars["token"]
+
+	ok := auth.VerifyToken(token)
+	if !ok {
+		http.Error(w, "Forbidden", http.StatusUnauthorized)
+		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
+		return
+	}
+
+	streamID, err := strconv.Atoi(vars["streamId"])
+	if err != nil {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
+
+	streamsMutex.Lock()
+	defer streamsMutex.Unlock()
+
+	if streamID < 0 || streamID >= len(streams) {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
+
+	stream := streams[streamID]
+	if !stream.stream.Active() {
+		http.Error(w, "Stream not active", http.StatusNotFound)
+		return
+	}
+
+	stream.stream.Serve(w, r, Config.Timeout)
+}
+
+func registerStreamsRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/{token}/{streamId}/{path:.*}", streamRequest)
+	return r
 }

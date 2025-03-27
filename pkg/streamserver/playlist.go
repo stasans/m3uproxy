@@ -128,24 +128,19 @@ func playlistRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("#EXTM3U\n"))
 	for i, stream := range streams {
-		if !stream.active {
+		if !stream.stream.Active() {
 			continue
 		}
 
-		masterPlaylist := "master." + stream.extension
-
-		uri := fmt.Sprintf("%s://%s/%s/%d/%s", scheme, r.Host, token, i, masterPlaylist)
-		if stream.disableRemap {
-			uri = stream.m3u.URI
-		}
+		uri := fmt.Sprintf("%s://%s/%s/%d/%s", scheme, r.Host, token, i, stream.stream.MasterPlaylist())
 
 		entry := m3uparser.M3UEntry{
 			URI:   uri,
-			Title: stream.m3u.Title,
+			Title: stream.stream.MediaName(),
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}
-		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
-		if !stream.radio {
+		entry.Tags = append(entry.Tags, stream.stream.M3UTags()...)
+		if !stream.stream.IsRadio() {
 			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
 			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
 		}
