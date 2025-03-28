@@ -1,4 +1,4 @@
-package stream
+package streamSources
 
 import (
 	"encoding/base64"
@@ -14,7 +14,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func (stream *M3UStream) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
+func (stream *M3UStreamSource) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
 
 	vars := mux.Vars(r)
 
@@ -133,6 +133,6 @@ func (stream *M3UStream) Serve(w http.ResponseWriter, r *http.Request, timeout i
 
 }
 
-func (stream *M3UStream) MasterPlaylist() string {
+func (stream *M3UStreamSource) MasterPlaylist() string {
 	return "master.m3u8"
 }

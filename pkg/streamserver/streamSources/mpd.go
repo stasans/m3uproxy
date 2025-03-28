@@ -1,4 +1,4 @@
-package stream
+package streamSources
 
 import (
 	"encoding/base64"
@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func (stream *MPDStream) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
+func (stream *MPDStreamSource) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
 
 	vars := mux.Vars(r)
 
@@ -103,6 +103,6 @@ func (stream *MPDStream) Serve(w http.ResponseWriter, r *http.Request, timeout i
 	mpdPlaylist.WriteTo(w)
 }
 
-func (stream *MPDStream) MasterPlaylist() string {
+func (stream *MPDStreamSource) MasterPlaylist() string {
 	return "master.mpd"
 }
