@@ -74,10 +74,6 @@ function Player({ channel_num }) {
 
     useEffect(() => {
         // Load the video when the channel prop changes
-        if (!channel_num) {
-            console.error('Channel number is not defined');
-            return;
-        }
         console.log('Loading channel:', channel_num);
         const player = playerRef.current;
         if (player && window.globalConfig.channelList) {
