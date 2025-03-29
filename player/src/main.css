@@ -104,7 +104,6 @@ html {
     height: 100vh;
 }
 
-
 .player {
     position: absolute;
     top: 0;
@@ -112,6 +111,26 @@ html {
     width: 100vw;
     height: 100vh;
     z-index: 1;
+}
+
+.channel-number,
+.channel-name {
+    position: absolute;
+    color: white;
+    font-size: 3rem;
+    font-weight: bold;
+    opacity: 1;
+    z-index: 100;
+}
+
+.channel-number {
+    top: 10px;
+    right: 30px;
+}
+
+.channel-name {
+    top: 10px;
+    left: 30px;
 }
 
 /* Media Queries for Mobile Devices */

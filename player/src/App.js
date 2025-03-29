@@ -10,7 +10,10 @@ window.globalConfig = {
     isTV: /Philips|NETTV|SmartTvA|_TV_MT9288/i.test(navigator.userAgent),
     EMESupported: typeof window.MediaKeys !== "undefined" && typeof window.navigator.requestMediaKeySystemAccess === "function",
     isMobile: navigator.userAgent.toLowerCase().indexOf('mobile') !== -1,
+    channelsUrl: '/streams.m3u',
+    licensingUrl: '/drm/licensing',
 };
+
 
 if (__DEV__) {
 
@@ -30,12 +33,15 @@ if (__DEV__) {
         console.warn = (msg) => logError("WARNING: " + msg);
     }
 
+    window.globalConfig.channelsUrl = `http://${window.location.hostname}:8080${window.globalConfig.channelsUrl}`;
+    window.globalConfig.licensingUrl = `http://${window.location.hostname}:8080${window.globalConfig.licensingUrl}`;
+
     console.log('Development mode: Logging enabled');
-    // log globalConfig
     console.log('Global Config:');
     for (const [key, value] of Object.entries(window.globalConfig)) {
         console.log(`- ${key}: ${value}`);
     }
+
 }
 
 function App() {
@@ -59,36 +65,42 @@ function App() {
 
     useEffect(() => {
         const handleKeyDown = (event) => {
+
+            console.log('Key pressed:', event.key);
             // Page up/down key handling
             if (event.key === 'PageUp' || event.key === 'PageDown') {
                 event.preventDefault();
-                const currentChannelIndex = parseInt(localStorage.getItem('current_channel_index')) || 0;
+                let currentChannelIndex = parseInt(localStorage.getItem('current_channel_index')) || 0;
                 const channelList = window.globalConfig.channelList || [];
-                let newChannelIndex = currentChannelIndex;
-                console.log('Current channel index:' + currentChannelIndex);
+
+                if (channelList.length === 0) {
+                    console.error('No channels available');
+                    return;
+                }
 
                 if (event.key === 'PageUp') {
-                    newChannelIndex++;
+                    currentChannelIndex++;
                 } else if (event.key === 'PageDown') {
-                    newChannelIndex--;
+                    currentChannelIndex--;
                 }
                 // Wrap around the channel list
-                if (newChannelIndex >= channelList.length) {
-                    newChannelIndex = 0;
+                if (currentChannelIndex >= channelList.length) {
+                    currentChannelIndex = 0;
                 }
-                if (newChannelIndex < 0) {
-                    newChannelIndex = channelList.length - 1;
+                if (currentChannelIndex < 0) {
+                    currentChannelIndex = channelList.length - 1;
                 }
 
                 // Update the current channel in localStorage
-                localStorage.setItem('current_channel_index', newChannelIndex);
-                console.log('Current channel index:' + newChannelIndex);
-                handleChannelClick(channelList[newChannelIndex]);
+                handleChannelClick(channelList[currentChannelIndex]);
+                return;
             }
+
             // M show/hide config
             if (event.key === 'm') {
                 event.preventDefault();
                 setShowConfig(!showConfig);
+                return;
             }
         };
 
@@ -102,26 +114,29 @@ function App() {
     }, []);
 
     const fetchPlaylist = () => {
+
         const username = localStorage.getItem('username');
         const password = localStorage.getItem('password');
-        if (!username || !password) {
-            setShowConfig(true);
-            return;
-        }
-
-        let streamsUrl = '/streams.m3u';
-        if (__DEV__) {
-            streamsUrl = `http://${window.location.hostname}:8080/streams.m3u`;
-            console.log('Loading streams from ' + streamsUrl);
-        }
         const headers = { Authorization: 'Basic ' + btoa(`${username}:${password}`) };
 
-        fetch(streamsUrl, { headers })
+        // const headers = buildRequestHeaders();
+        console.log('Fetching playlist from URL:', window.globalConfig.channelsUrl);
+        fetch(window.globalConfig.channelsUrl, { headers })
             .then(response => response.text())
             .then(data => {
                 const items = parseM3U(data);
-                setPlaylistItems(items);
+                if (items.length === 0) {
+                    console.error('No channels available');
+                    window.globalConfig.channelList = [];
+                    setPlaylistItems([]);
+                    setSelectedChannel(0);
+                    return;
+                }
+
                 window.globalConfig.channelList = items;
+                setPlaylistItems(items);
+
+                // Set the selected channel to the last watched channel
                 let previousChannelIndex = parseInt(localStorage.getItem('current_channel_index')) || 0;
                 if (previousChannelIndex >= items.length) {
                     previousChannelIndex = 0;
@@ -129,14 +144,14 @@ function App() {
                 if (previousChannelIndex < 0) {
                     previousChannelIndex = items.length - 1;
                 }
-                const currentChannel = items[previousChannelIndex];
-                setSelectedChannel(currentChannel);
-                console.log('Current channel index:' + previousChannelIndex);
+                console.log('Previous channel index:', previousChannelIndex);
+                setSelectedChannel(previousChannelIndex);
             })
             .catch((error) => {
                 console.error('Error fetching playlist:' + error);
+                window.globalConfig.channelList = [];
                 setPlaylistItems([]);
-                setSelectedChannel(null);
+                setSelectedChannel(0);
             }
             );
 
@@ -166,10 +181,10 @@ function App() {
 
     const handleChannelClick = (channel) => {
         localStorage.setItem('current_channel_index', channel.channel_num);
-        setSelectedChannel(channel);
+        console.log('Selected channel:', channel);
+        setSelectedChannel(channel.channel_num);
     };
 
-    const handleShow = () => setShowConfig(true);
     const handleClose = () => setShowConfig(false);
     const handleSave = (username, password) => {
         setShowConfig(false);
@@ -192,7 +207,7 @@ function App() {
                     <div className="d-flex justify-content-between align-items-center toolbar">
                         <span id="channel_title" className="mb-0"></span>
                     </div>
-                    <Player channel={selectedChannel} />
+                    <Player channel_num={selectedChannel} />
                 </div>
             </div>
         </div>

@@ -1,9 +1,13 @@
-import React, { useEffect, useRef } from 'react';
-import shaka from 'shaka-player';
+import React, { useEffect, useRef, useState } from 'react';
+import 'shaka-player/dist/controls.css';
+const shaka = require('shaka-player/dist/shaka-player.ui.js');
 
-function Player({ channel }) {
+function Player({ channel_num }) {
     const videoRef = useRef(null);
+    const videoContainerRef = useRef(null);
     const playerRef = useRef(null);
+    const [channel, setChannel] = useState(null);
+    const [fadeOut, setFadeOut] = useState(false);
 
     useEffect(() => {
         const player = new shaka.Player();
@@ -11,7 +15,14 @@ function Player({ channel }) {
 
         // Attach the video element to the player
         player.attach(videoRef.current).then(() => {
-            console.log('Player attached to video element');
+            // const video = videoRef.current;
+            // const videoContainer = videoContainerRef.current;
+            // const ui = new shaka.ui.Overlay(player, videoContainer, video);
+            // ui.configure({
+            //     controlPanelElements: ['play_pause', 'spacer'],
+            //     addSeekBar: true,
+            // });
+
         }).catch((err) => {
             console.error('Error attaching player to video element:', err);
         });
@@ -19,15 +30,14 @@ function Player({ channel }) {
         if (window.globalConfig.EMESupported) {
             console.log('EME Supported, skipping encrypted content');
             shaka.polyfill.installAll();
-            let clearKeysUrl = '/drm/clearkey';
             const keys = {};
 
-            if (__DEV__) {
-                clearKeysUrl = 'http://' + window.location.hostname + ':8080/drm/clearkey';
-            }
+            const username = localStorage.getItem('username');
+            const password = localStorage.getItem('password');
+            const headers = { Authorization: 'Basic ' + btoa(`${username}:${password}`) };
 
-            console.log('Loading clearkeys from:' + clearKeysUrl);
-            fetch(clearKeysUrl, { headers })
+            console.log('Loading licensing from server');
+            fetch(window.globalConfig.licensingUrl, { headers })
                 .then(response => response.text())
                 .then(data => {
                     const response = JSON.parse(data);
@@ -37,7 +47,6 @@ function Player({ channel }) {
                             continue;
                         }
                         keys[key.kid] = key.k;
-                        console.log('Key:' + key.kid + ',Value:' + key.k);
                     }
                     player.configure({
                         drm: {
@@ -49,10 +58,6 @@ function Player({ channel }) {
         } else {
             console.log('EME Not Supported');
         }
-
-        const username = localStorage.getItem('username');
-        const password = localStorage.getItem('password');
-        const headers = { Authorization: 'Basic ' + btoa(`${username}:${password}`) };
 
         // Handle player errors
         player.addEventListener('error', (event) => {
@@ -69,19 +74,50 @@ function Player({ channel }) {
 
     useEffect(() => {
         // Load the video when the channel prop changes
+        if (!channel_num) {
+            console.error('Channel number is not defined');
+            return;
+        }
+        console.log('Loading channel:', channel_num);
         const player = playerRef.current;
-        if (player && channel) {
+        if (player && window.globalConfig.channelList) {
+            const channel = window.globalConfig.channelList[channel_num];
+            if (!channel) {
+                console.error('Channel not found');
+                return;
+            }
+            setChannel(channel);
+            setFadeOut(false);
             player.load(channel.source).then(() => {
                 console.log('Video loaded successfully');
+                videoRef.current.play().catch((err) => {
+                    console.error('Error starting playback:', err);
+                });
+                setFadeOut(false);
+                setTimeout(() => {
+                    setFadeOut(true);
+                }, 3000); // Hide overlay after 2 seconds
             }).catch((err) => {
                 console.error('Error loading source ' + channel.source, err);
             });
         }
-    }, [channel]);
+    }, [channel_num]);
 
     return (
-        <div>
-            <video ref={videoRef} controls autoPlay className="w-100 player" />
+        <div id="video-container" ref={videoContainerRef} className="player-container">
+            <video id="video" ref={videoRef} autoPlay controls className="w-100 player" />
+            {channel && (
+                <>
+                    <div className="channel-name" style={{
+                        opacity: fadeOut ? 0 : 1,
+                        transition: fadeOut ? "opacity 2s ease-out" : ""
+                    }} >{channel.tvgName}</div>
+                    <div className="channel-number" style={{
+                        opacity: fadeOut ? 0 : 1,
+                        transition: fadeOut ? "opacity 2s ease-out" : ""
+                    }} >{channel_num}</div>
+                </>
+            )}
         </div>
     );
 }

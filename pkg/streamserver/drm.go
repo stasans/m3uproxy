@@ -24,10 +24,6 @@ type streamLicenseManager struct {
 	licenses map[string]streamLicenseType
 }
 
-type emeLicenseRequest struct {
-	KeyIds []string `json:"kids"`
-}
-
 type emeLicenseKey struct {
 	Type string `json:"kty"`
 	Key  string `json:"k"`
@@ -59,18 +55,7 @@ func (m *streamLicenseManager) addLicense(keyType, keyId, key string) {
 	}
 }
 
-func (m *streamLicenseManager) getLicense(keyType string, keyId string) (streamLicense, bool) {
-
-	if _, ok := m.licenses[keyType]; !ok {
-		return streamLicense{}, false
-	}
-
-	license, ok := m.licenses[keyType].keys[keyId]
-	return license, ok
-}
-
-// process a  License Release Format based on EME JSON-base spec
-func licenseManagerRequest(w http.ResponseWriter, r *http.Request) {
+func licenseKeysRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -87,41 +72,28 @@ func licenseManagerRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	licenseType := vars["type"]
-
 	// Check if the license manager is initialized
 	if licenseManger == nil {
 		http.Error(w, "No licenses found", http.StatusNotFound)
 		return
 	}
 
-	switch licenseType {
-	case "clearkey":
+	var licenses emeLicenseResponse
+	for _, license := range licenseManger.licenses["clearkey"].keys {
 
-		var licenses emeLicenseResponse
-		for _, license := range licenseManger.licenses["clearkey"].keys {
-
-			licenses.Keys = append(licenses.Keys, emeLicenseKey{
-				Type: "oct",
-				Key:  license.key,
-				Id:   license.keyId,
-			})
-		}
-
-		// Return the license
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(licenses)
-	case "widevine":
-	case "playready":
-	default:
-		http.Error(w, "Invalid license type", http.StatusBadRequest)
-		return
+		licenses.Keys = append(licenses.Keys, emeLicenseKey{
+			Type: "oct",
+			Key:  license.key,
+			Id:   license.keyId,
+		})
 	}
 
+	// Return the license
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(licenses)
 }
 
 func registerLicenseRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/drm/{type:.*}", basicAuth(licenseManagerRequest))
+	r.HandleFunc("/drm/licensing", basicAuth(licenseKeysRequest))
 	return r
 }
