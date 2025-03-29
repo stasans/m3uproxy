@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Player from './components/Player';
 import Playlist from './components/Playlist';
 import Config from './components/Config';
@@ -46,8 +46,13 @@ if (__DEV__) {
 
 function App() {
     const [playlistItems, setPlaylistItems] = useState([]);
-    const [selectedChannel, setSelectedChannel] = useState(null);
     const [showConfig, setShowConfig] = useState(false);
+    const channelNameRef = useRef(null);
+    const channelNumberRef = useRef(null);
+    const [channelNameVisible, setChannelNameVisible] = useState(false);
+    const [channelNumberVisible, setChannelNumberVisible] = useState(false);
+    const [currentChannel, setCurrentChannel] = useState(false);
+    var channelNum = 0;
 
     useEffect(() => {
         // Load playlist from localStorage or show config modal
@@ -92,7 +97,7 @@ function App() {
                 }
 
                 // Update the current channel in localStorage
-                handleChannelClick(channelList[currentChannelIndex]);
+                requestChannelChange(channelList[currentChannelIndex]);
                 return;
             }
 
@@ -100,6 +105,74 @@ function App() {
             if (event.key === 'm') {
                 event.preventDefault();
                 setShowConfig(!showConfig);
+                return;
+            }
+
+            // F key to toggle fullscreen
+            if (event.key === 'f') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    // Check if the document is already in fullscreen mode
+                    if (document.fullscreenElement) {
+                        console.log('Already in fullscreen mode');
+                        return;
+                    }
+                    // Request fullscreen on the document element and set video width to 100%
+                    document.documentElement.requestFullscreen().then(() => {
+                        console.log('Entered fullscreen mode');
+                    }
+                    ).catch((error) => {
+                        console.error('Error entering fullscreen:', error);
+                    });
+                }
+            }
+            // Escape key to exit fullscreen
+            if (event.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                }
+            }
+
+            // Space key to pause/play
+            if (event.key === ' ') {
+                event.preventDefault();
+                const video = document.querySelector('video');
+                if (video) {
+                    if (video.paused) {
+                        video.play();
+                    } else {
+                        video.pause();
+                    }
+                }
+            }
+
+            // When pressing a digit key (0-9), the input will be read for 3 seconds, each subsequent digit will be used to compute the channel number
+            // and the channel will be changed to the corresponding channel number
+            if (event.key >= '0' && event.key <= '9') {
+                event.preventDefault();
+                const digit = parseInt(event.key, 10);
+                channelNum = channelNum * 10 + digit;
+                channelNumberRef.current.innerText = channelNum;
+                setChannelNumberVisible(true);
+
+                if (window.globalConfig.changeTimeout) {
+                    clearTimeout(window.globalConfig.changeTimeout);
+                }
+                window.globalConfig.changeTimeout = setTimeout(() => {
+                    // cancel previous timeout
+                    const channelList = window.globalConfig.channelList || [];
+                    const newChannelNum = channelNum - 1;
+                    channelNum = 0;
+
+                    if (newChannelNum >= channelList.length) {
+                        console.error('Channel number out of range');
+                        return;
+                    }
+
+                    // Wrap around the channel list
+                    requestChannelChange(channelList[newChannelNum]);
+                }, 3000);
                 return;
             }
         };
@@ -124,12 +197,12 @@ function App() {
         fetch(window.globalConfig.channelsUrl, { headers })
             .then(response => response.text())
             .then(data => {
-                const items = parseM3U(data);
+                const items = parsePlaylist(data);
                 if (items.length === 0) {
                     console.error('No channels available');
                     window.globalConfig.channelList = [];
                     setPlaylistItems([]);
-                    setSelectedChannel(0);
+                    setCurrentChannel(null);
                     return;
                 }
 
@@ -144,20 +217,19 @@ function App() {
                 if (previousChannelIndex < 0) {
                     previousChannelIndex = items.length - 1;
                 }
-                console.log('Previous channel index:', previousChannelIndex);
-                setSelectedChannel(previousChannelIndex);
+                setCurrentChannel(items[previousChannelIndex]);
             })
             .catch((error) => {
                 console.error('Error fetching playlist:' + error);
                 window.globalConfig.channelList = [];
                 setPlaylistItems([]);
-                setSelectedChannel(0);
+                setCurrentChannel(null);
             }
             );
 
     };
 
-    const parseM3U = (data) => {
+    const parsePlaylist = (data) => {
         const lines = data.trim().split('\n');
         const items = [];
         let item = {};
@@ -179,36 +251,61 @@ function App() {
         return items;
     };
 
-    const handleChannelClick = (channel) => {
+    const requestChannelChange = (channel) => {
         localStorage.setItem('current_channel_index', channel.channel_num);
-        console.log('Selected channel:', channel);
-        setSelectedChannel(channel.channel_num);
+        setChannelNameVisible(true);
+        setChannelNumberVisible(true);
+        setCurrentChannel(channel);
     };
 
+    const handleVideoError = (error) => {
+        console.error('Video error:', error);
+        channelNameRef.current.innerText = currentChannel.tvgName + ' - channel not available';
+        setChannelNameVisible(true);
+        setChannelNumberVisible(true);
+    }
+    const handleVideoLoad = () => {
+    }
+
+    const handleVideoPlay = () => {
+        setTimeout(() => {
+            setChannelNameVisible(false);
+            setChannelNumberVisible(false);
+        }, 3000);
+    }
+
     const handleClose = () => setShowConfig(false);
-    const handleSave = (username, password) => {
+    const handleSave = () => {
         setShowConfig(false);
         fetchPlaylist();
     }
 
     return (
-        <div className="container-fluid">
-            <div className="row d-flex justify-content-center">
-                <Config show={showConfig} onClose={handleClose} onSave={handleSave} />
-                <div className="col-sm-2 sidebar">
-                    <Playlist
-                        items={playlistItems}
-                        onChannelClick={handleChannelClick}
-                        onUpdatePlaylist={fetchPlaylist}
-                    >
-                    </Playlist>
-                </div>
-                <div className="col-sm-10 content">
-                    <div className="d-flex justify-content-between align-items-center toolbar">
-                        <span id="channel_title" className="mb-0"></span>
-                    </div>
-                    <Player channel_num={selectedChannel} />
-                </div>
+        <div className="app">
+            <Config show={showConfig} onClose={handleClose} onSave={handleSave} />
+            <div className="sidebar">
+                <Playlist
+                    items={playlistItems}
+                    onChannelClick={requestChannelChange}
+                    onUpdatePlaylist={fetchPlaylist}
+                >
+                </Playlist>
+            </div>
+            <div className="content">
+                <Player
+                    source={currentChannel ? currentChannel.source : ''}
+                    onError={handleVideoError}
+                    onLoad={handleVideoLoad}
+                    onPlay={handleVideoPlay}
+                />
+                <div ref={channelNameRef} className="channel-name" style={{
+                    opacity: channelNameVisible ? 1 : 0,
+                    transition: channelNameVisible ? "" : "opacity 2s ease-out"
+                }} >{currentChannel.tvgName}</div>
+                <div ref={channelNumberRef} className="channel-number" style={{
+                    opacity: channelNumberVisible ? 1 : 0,
+                    transition: channelNumberVisible ? "" : "opacity 2s ease-out"
+                }} >{currentChannel.channel_num + 1}</div>
             </div>
         </div>
     );

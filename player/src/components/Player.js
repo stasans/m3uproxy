@@ -1,35 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
-import 'shaka-player/dist/controls.css';
-const shaka = require('shaka-player/dist/shaka-player.ui.js');
+import React, { useEffect, useRef } from 'react';
+import {
+    Player as ShakaPlayer,
+    polyfill as ShakaPolyfill
+} from "shaka-player/dist/shaka-player.ui";
 
-function Player({ channel_num }) {
+function Player({ source, onLoad, onPlay, onError }) {
     const videoRef = useRef(null);
     const videoContainerRef = useRef(null);
     const playerRef = useRef(null);
-    const [channel, setChannel] = useState(null);
-    const [fadeOut, setFadeOut] = useState(false);
 
     useEffect(() => {
-        const player = new shaka.Player();
-        playerRef.current = player;
-
-        // Attach the video element to the player
-        player.attach(videoRef.current).then(() => {
-            // const video = videoRef.current;
-            // const videoContainer = videoContainerRef.current;
-            // const ui = new shaka.ui.Overlay(player, videoContainer, video);
-            // ui.configure({
-            //     controlPanelElements: ['play_pause', 'spacer'],
-            //     addSeekBar: true,
-            // });
-
-        }).catch((err) => {
-            console.error('Error attaching player to video element:', err);
-        });
-
         if (window.globalConfig.EMESupported) {
             console.log('EME Supported, skipping encrypted content');
-            shaka.polyfill.installAll();
+            ShakaPolyfill.installAll();
             const keys = {};
 
             const username = localStorage.getItem('username');
@@ -59,6 +42,9 @@ function Player({ channel_num }) {
             console.log('EME Not Supported');
         }
 
+        const player = new ShakaPlayer(videoRef.current);
+        playerRef.current = player;
+
         // Handle player errors
         player.addEventListener('error', (event) => {
             console.error('Shaka Player Error:', event.detail);
@@ -74,46 +60,81 @@ function Player({ channel_num }) {
 
     useEffect(() => {
         // Load the video when the channel prop changes
-        console.log('Loading channel:', channel_num);
         const player = playerRef.current;
-        if (player && window.globalConfig.channelList) {
-            const channel = window.globalConfig.channelList[channel_num];
-            if (!channel) {
-                console.error('Channel not found');
-                return;
-            }
-            setChannel(channel);
-            setFadeOut(false);
-            player.load(channel.source).then(() => {
-                console.log('Video loaded successfully');
-                videoRef.current.play().catch((err) => {
-                    console.error('Error starting playback:', err);
+        if (player) {
+            player.load(source).then(() => {
+                onLoad();
+                videoRef.current.play().then(() => {
+                    onPlay();
+                }
+                ).catch((err) => {
+                    if (err.code === 1001) {
+                        console.error('DRM error:', err);
+                        onError(err);
+                    } else if (err.code === 1002) {
+                        console.error('Media error:', err);
+                        onError(err);
+                    } else if (err.code === 1004) {
+                        console.error('Playback error:', err);
+                        onError(err);
+                    } else if (err.code === 1003) {
+                        console.error('Manifest error:', err);
+                        onError(err);
+                    } else if (err.code === 1006) {
+                        console.error('Key error:', err);
+                        onError(err);
+                    } else if (err.code === 1007) {
+                        console.error('License error:', err);
+                        onError(err);
+                    } else if (err.code === 1008) {
+                        console.error('Network error:', err);
+                        onError(err);
+                    } else {
+                        console.error('Generic error:', err);
+                    }
                 });
-                setFadeOut(false);
-                setTimeout(() => {
-                    setFadeOut(true);
-                }, 3000); // Hide overlay after 2 seconds
             }).catch((err) => {
-                console.error('Error loading source ' + channel.source, err);
+                if (err.code === 1001) {
+                    console.error('DRM error:', err);
+                    onError(err);
+                } else if (err.code === 1002) {
+                    console.error('Media error:', err);
+                    onError(err);
+                } else if (err.code === 1004) {
+                    console.error('Playback error:', err);
+                    onError(err);
+                } else if (err.code === 1003) {
+                    console.error('Manifest error:', err);
+                    onError(err);
+                } else if (err.code === 1006) {
+                    console.error('Key error:', err);
+                    onError(err);
+                } else if (err.code === 1007) {
+                    console.error('License error:', err);
+                    onError(err);
+                } else if (err.code === 1008) {
+                    console.error('Network error:', err);
+                    onError(err);
+                } else {
+                    console.error('Generic error:', err);
+                }
+
             });
         }
-    }, [channel_num]);
+    }, [source]);
 
     return (
-        <div id="video-container" ref={videoContainerRef} className="player-container">
-            <video id="video" ref={videoRef} autoPlay controls className="w-100 player" />
-            {channel && (
-                <>
-                    <div className="channel-name" style={{
-                        opacity: fadeOut ? 0 : 1,
-                        transition: fadeOut ? "opacity 2s ease-out" : ""
-                    }} >{channel.tvgName}</div>
-                    <div className="channel-number" style={{
-                        opacity: fadeOut ? 0 : 1,
-                        transition: fadeOut ? "opacity 2s ease-out" : ""
-                    }} >{channel_num}</div>
-                </>
-            )}
+        <div ref={videoContainerRef} className="player-container">
+            <video ref={videoRef} autoPlay className="player"
+                onClick={() => {
+                    if (videoRef.current.paused) {
+                        videoRef.current.play();
+                    } else {
+                        videoRef.current.pause();
+                    }
+                }
+                }
+            />
         </div>
     );
 }

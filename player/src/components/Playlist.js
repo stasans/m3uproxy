@@ -160,16 +160,16 @@ function Playlist({ items, onChannelClick }) {
 
     return (
         <div className="playlist">
-            <div ref={topTriggerRef} className="mt-3 scroll scroll_down">
+            <div ref={topTriggerRef} className="scroll scroll_down">
                 <span>
-                    <i class="bi bi-arrow-up-square-fill"></i>
+                    <i className="bi bi-arrow-up-square-fill"></i>
                 </span>
             </div>
-            <div className="mt-3 channels" ref={channelsRef}>
+            <div className="channels" ref={channelsRef}>
                 {items.map((item, index) => (
                     <div
                         key={index}
-                        className="channel d-flex flex-column p-3"
+                        className="channel"
                         onClick={() => onChannelClick(item)}
                     >
                         {item.tvgLogo && images[item.tvgLogo] ? (
@@ -180,9 +180,9 @@ function Playlist({ items, onChannelClick }) {
                     </div>
                 ))}
             </div>
-            <div ref={bottomTriggerRef} className="mt-3 scroll scroll_up">
+            <div ref={bottomTriggerRef} className="scroll scroll_up">
                 <span>
-                    <i class="bi bi-arrow-down-square-fill"></i>
+                    <i className="bi bi-arrow-down-square-fill"></i>
                 </span>
             </div>
         </div>
