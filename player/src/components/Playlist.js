@@ -82,7 +82,7 @@ function Playlist({ items, onChannelClick }) {
         };
 
         // Attach event listeners to the trigger areas when on a desktop browser
-        if (navigator.userAgent.toLowerCase().indexOf('mobile') === -1) {
+        if (!window.globalConfig.isMobile) {
             if (topTriggerRef.current && bottomTriggerRef.current) {
                 topTriggerRef.current.addEventListener('mouseenter', handleMouseEnterTop);
                 bottomTriggerRef.current.addEventListener('mouseenter', handleMouseEnterBottom);
@@ -101,7 +101,10 @@ function Playlist({ items, onChannelClick }) {
                     });
                 }
             }
-        } else {
+        }
+
+        // If on a mobile device, hide the scroll triggers and enable touch scrolling
+        if (window.globalConfig.isMobile) {
             // Hide scroll triggers on mobile devices and tablets
             if (topTriggerRef.current && bottomTriggerRef.current) {
                 topTriggerRef.current.style.display = 'none';
@@ -158,7 +161,7 @@ function Playlist({ items, onChannelClick }) {
                 }
             }
         };
-    }, []); 
+    }, []);
 
     return (
         <div className="playlist">

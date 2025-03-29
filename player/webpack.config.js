@@ -3,6 +3,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const TerserPlugin = require("terser-webpack-plugin");
 const { env } = require('process');
 const webpack = require('webpack');
+const express = require("express");
 
 module.exports = {
     mode: env.NODE_ENV === 'development' ? 'development' : 'production',
@@ -47,11 +48,23 @@ module.exports = {
             __DEV__: env.NODE_ENV === 'development'
         }),
     ],
+    bail: true, // Stops Webpack on the first error
     devServer: {
         static: {
             directory: path.join(__dirname, 'public'), // Adjust this to point to your static files folder
         },
         compress: true,
         port: 3000,
+        setupMiddlewares: (middlewares, devServer) => {
+            if (!devServer) return middlewares;
+            const app = devServer.app;
+
+            app.get("/log", (req, res) => {
+                console.log("TV LOG:", req.query.msg);
+                res.send("Logged");
+            });
+
+            return middlewares;
+        },
     },
 };

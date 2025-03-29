@@ -15,7 +15,7 @@
             ]
         },
         {
-            "name": "Launch React SPA",
+            "name": "Launch React SPA (Dev)",
             "type": "msedge",
             "request": "launch",
             "url": "http://localhost:3000",
@@ -26,15 +26,42 @@
             "presentation": {
                 "group": "frontend",
                 "hidden": false
+            },
+            "env": {
+                "NODE_ENV": "development"
+            }
+        },
+        {
+            "name": "Launch React SPA (Prod)",
+            "type": "msedge",
+            "request": "launch",
+            "url": "http://localhost:3000",
+            "webRoot": "${workspaceFolder}/player",
+            "sourceMaps": true,
+            "preLaunchTask": "npm: start",
+            "postDebugTask": "npm: stop",
+            "presentation": {
+                "group": "frontend",
+                "hidden": false
+            },
+            "env": {
+                "NODE_ENV": "production"
             }
         }
     ],
     "compounds": [
         {
-            "name": "Launch Full Stack (Go + React)",
+            "name": "Launch Full Stack (Go + React) (Dev)",
             "configurations": [
                 "Launch M3UProxy Server",
-                "Launch React SPA"
+                "Launch React SPA (Dev)"
+            ],
+        },
+        {
+            "name": "Launch Full Stack (Go + React) (Prod)",
+            "configurations": [
+                "Launch M3UProxy Server",
+                "Launch React SPA (Prod)"
             ],
         }
     ]
