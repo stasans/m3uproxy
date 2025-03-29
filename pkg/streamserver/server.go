@@ -1,24 +1,3 @@
-/*
-Copyright © 2024 Alexandre Pires
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package streamserver
 
 import (
@@ -26,22 +5,27 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/streamserver/streamSources"
 
 	"github.com/gorilla/mux"
 )
 
+type streamEntry struct {
+	index   int
+	tvgId   string
+	sources streamSources.Sources
+}
+
 var (
-	streams           = make([]*streamStruct, 0)
-	streamsMutex      sync.Mutex
+	channels          = make(map[string]*streamEntry, 0)
+	channelsMux       sync.Mutex
 	stopStreamLoading = make(chan bool)
 	restartServer     = make(chan bool)
 	running           = false
@@ -57,10 +41,8 @@ func LoadStreams() error {
 		return err
 	}
 
-	streamList := make([]*streamStruct, 0)
-
 	var wg sync.WaitGroup
-	var streamsChan = make(chan *streamStruct)
+	var streamsChan = make(chan *streamEntry)
 
 	stopWorkers := make(chan bool)
 	for i := 0; i < Config.NumWorkers; i++ {
@@ -83,102 +65,30 @@ func LoadStreams() error {
 				tvgId := entry.TVGTags.GetValue("tvg-id")
 				radio := entry.TVGTags.GetValue("radio")
 				if tvgId == "" && radio == "" {
+					log.Printf("No tvg-id or radio tag found for %s, skipping\n", entry.URI)
 					continue
 				}
 
-				proxy := ""
-				m3uproxyTags := entry.SearchTags("M3UPROXYTRANSPORT")
-				if len(m3uproxyTags) > 0 {
-					parts := strings.Split(m3uproxyTags[0].Value, "=")
-					if len(parts) == 2 {
-						switch parts[0] {
-						case "proxy":
-							proxy = parts[1]
-						default:
-							log.Printf("Unknown M3UPROXYTRANSPORT tag: %s\n", parts[0])
-						}
+				channel, ok := channels[tvgId]
+				if !ok {
+					channelsMux.Lock()
+					channels[tvgId] = &streamEntry{
+						index:   i,
+						tvgId:   tvgId,
+						sources: streamSources.CreateSources(),
 					}
+					channel = channels[tvgId]
+					channelsMux.Unlock()
 				}
-
-				transport := http.DefaultTransport.(*http.Transport)
-				if proxy != "" {
-					proxyURL, err := url.Parse(proxy)
-					if err == nil {
-						transport = &http.Transport{
-							Proxy: http.ProxyURL(proxyURL),
-						}
-					}
-				}
-
-				headers := make(map[string]string)
-				m3uproxyTags = entry.SearchTags("M3UPROXYHEADER")
-				for _, tag := range m3uproxyTags {
-					parts := strings.Split(tag.Value, "=")
-					if len(parts) == 2 {
-						headers[parts[0]] = parts[1]
-					}
-				}
-
-				vlcTags := entry.SearchTags("EXTVLCOPT")
-				for _, tag := range vlcTags {
-					parts := strings.Split(tag.Value, "=")
-					if len(parts) == 2 {
-						switch parts[0] {
-						case "http-user-agent":
-							headers["User-Agent"] = parts[1]
-						case "http-referrer":
-							headers["Referer"] = parts[1]
-						default:
-						}
-					}
-				}
-
-				if headers["User-Agent"] == "" {
-					headers["User-Agent"] = "VLC/3.0.11 LibVLC/3.0.11"
-				}
-
-				m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
-				forceKodiHeaders := false
-				disableRemap := false
-				for _, tag := range m3uproxyTags {
-					switch tag.Value {
-					case "forcekodiheaders":
-						forceKodiHeaders = true
-					case "disableremap":
-						disableRemap = true
-					default:
-					}
-				}
-
-				// Clear non-standard tags
-				entry.ClearTags()
-
-				stream := streamStruct{
-					index:            i,
-					m3u:              entry,
-					active:           false,
-					headers:          headers,
-					httpProxy:        proxy,
-					forceKodiHeaders: forceKodiHeaders,
-					radio:            radio == "true",
-					mux:              &sync.Mutex{},
-					transport:        transport,
-					disableRemap:     disableRemap,
-				}
-
-				streamList = append(streamList, &stream)
-				streamsChan <- &stream
+				log.Printf("Adding stream source for %s, for channel %s\n", entry.URI, tvgId)
+				channel.sources.AddSource(entry, Config.Timeout)
+				streamsChan <- channel
 			}
 		}
 		close(streamsChan)
 	}()
 
 	wg.Wait()
-	log.Printf("Loaded %d active streams\n", len(streamList))
-
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
-	streams = streamList
 
 	return nil
 }
@@ -233,7 +143,7 @@ func Run(configPath string) {
 		registerPlayerRoutes(r)
 		registerEpgRoutes(r)
 		registerLicenseRoutes(r)
-		registerStreamsRoutes(r)
+		registerChannelsRoutes(r)
 
 		if configureSecurity() != nil {
 			log.Println("GeoIP database not found, geo-location will not be available.")
@@ -294,9 +204,54 @@ func Restart() {
 }
 
 func healthCheckRequest(w http.ResponseWriter, r *http.Request) {
-	if streams == nil {
+	if channels == nil {
 		http.Error(w, "Streams not loaded", http.StatusServiceUnavailable)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func streamRequest(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	token := vars["token"]
+
+	ok := auth.VerifyToken(token)
+	if !ok {
+		http.Error(w, "Forbidden", http.StatusUnauthorized)
+		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
+		return
+	}
+
+	channelId, ok := vars["channelId"]
+	if !ok {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
+
+	channelsMux.Lock()
+	defer channelsMux.Unlock()
+
+	channel, ok := channels[channelId]
+	if !ok {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+
+	if !channel.sources.Active() {
+		http.Error(w, "Stream not active", http.StatusNotFound)
+		return
+	}
+
+	channel.sources.Serve(w, r, Config.Timeout)
+}
+
+func registerChannelsRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/{token}/{channelId}/{path:.*}", streamRequest)
+	return r
 }

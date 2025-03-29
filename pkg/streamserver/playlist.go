@@ -1,24 +1,3 @@
-/*
-Copyright © 2024 Alexandre Pires
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
 package streamserver
 
 import (
@@ -122,33 +101,55 @@ func playlistRequest(w http.ResponseWriter, r *http.Request) {
 		scheme = "http"
 	}
 
-	streamsMutex.Lock()
-	defer streamsMutex.Unlock()
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("#EXTM3U\n"))
-	for i, stream := range streams {
-		if !stream.active {
+
+	active_channels := getActiveChannels()
+	if len(active_channels) == 0 {
+		w.Write([]byte("#EXT-X-ENDLIST\n"))
+		return
+	}
+
+	// Write the playlist
+	for _, channel := range active_channels {
+		if !channel.sources.Active() {
 			continue
 		}
 
-		masterPlaylist := "master." + stream.extension
-
-		uri := fmt.Sprintf("%s://%s/%s/%d/%s", scheme, r.Host, token, i, masterPlaylist)
-		if stream.disableRemap {
-			uri = stream.m3u.URI
-		}
+		uri := fmt.Sprintf("%s://%s/%s/%s/%s", scheme, r.Host, token, channel.tvgId, channel.sources.MasterPlaylist())
 
 		entry := m3uparser.M3UEntry{
 			URI:   uri,
-			Title: stream.m3u.Title,
+			Title: channel.sources.MediaName(),
 			Tags:  make([]m3uparser.M3UTag, 0),
 		}
-		entry.Tags = append(entry.Tags, stream.m3u.Tags...)
-		if !stream.radio {
+		entry.Tags = append(entry.Tags, channel.sources.M3UTags()...)
+		if !channel.sources.IsRadio() {
 			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
 			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
 		}
 		w.Write([]byte(entry.String() + "\n"))
 	}
+}
+
+func getActiveChannels() []*streamEntry {
+	// get a list of all active streams
+	channelsMux.Lock()
+	active_channels := make([]*streamEntry, 0)
+	for _, channel := range channels {
+		if channel.sources.Active() {
+			active_channels = append(active_channels, channel)
+		}
+	}
+	channelsMux.Unlock()
+	// Sort channels by index
+	for i := 0; i < len(active_channels); i++ {
+		for j := i + 1; j < len(active_channels); j++ {
+			if active_channels[i].index > active_channels[j].index {
+				active_channels[i], active_channels[j] = active_channels[j], active_channels[i]
+			}
+		}
+	}
+	return active_channels
 }
