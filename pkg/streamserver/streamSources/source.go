@@ -249,25 +249,25 @@ func (s *Sources) GetActiveSource() StreamSource {
 }
 
 func (s *Sources) HealthCheck(timeout int) error {
-	s.mux.Lock()
-	defer s.mux.Unlock()
 
-	s.activeSource = nil
+	var activeSource StreamSource
 	for _, source := range s.sources {
 		err := source.HealthCheck(timeout)
 		if err != nil {
 			log.Printf("Stream %s is not healthy: %s\n", source.MediaName(), err)
 		}
 		if source.Active() {
-			s.activeSource = source
+			activeSource = source
 			break
 		}
 	}
 
-	if s.activeSource == nil {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.activeSource = activeSource
+	if activeSource == nil {
 		return fmt.Errorf("no active stream source found")
 	}
-
 	return nil
 }
 
