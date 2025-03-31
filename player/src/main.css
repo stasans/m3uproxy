@@ -113,26 +113,40 @@ html {
     z-index: 1;
 }
 
-.channel-number,
-.channel-name {
+.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.0);
+    z-index: 2;
+}
+
+.overlay .channel-number,
+.overlay .channel-name {
     position: absolute;
     color: white;
     font-size: 3rem;
     font-weight: bold;
     opacity: 1;
     z-index: 100;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-radius: 10px;
+    top: 60px;
 }
 
-.channel-number {
-    top: 10px;
+.overlay .channel-number {
     right: 30px;
 }
 
-.channel-name {
-    top: 10px;
+.overlay .channel-name {
     left: 30px;
 }
-
 
 /* Media Queries for Mobile Devices */
 @media (max-width: 600px) {

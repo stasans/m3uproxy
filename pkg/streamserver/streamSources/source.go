@@ -218,20 +218,33 @@ func CreateSources() Sources {
 	}
 }
 
+func (s *Sources) Sources() []StreamSource {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.sources
+}
+
+func (s *Sources) SourceExists(entry m3uparser.M3UEntry) bool {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	for _, source := range s.sources {
+		if source.Url() == entry.URI {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Sources) AddSource(entry m3uparser.M3UEntry, timeout int) {
 
 	// Check if the source is already in the list
-	for _, existingSource := range s.sources {
-		if existingSource.Url() == entry.URI {
-			log.Printf("Stream source %s already exists, skipping registration\n", entry.URI)
-			return
-		}
+	if s.SourceExists(entry) {
+		log.Printf("Stream source already exists: %s\n", entry.URI)
+		return
 	}
 
-	source := sourceFactory(
-		entry,
-		timeout,
-	)
+	source := sourceFactory(entry, timeout)
 	if source == nil {
 		log.Printf("Error registering stream source: %s\n", entry.URI)
 		return
@@ -250,7 +263,7 @@ func (s *Sources) GetActiveSource() StreamSource {
 
 func (s *Sources) HealthCheck(timeout int) error {
 
-	var activeSource StreamSource
+	var activeSource StreamSource = nil
 	for _, source := range s.sources {
 		err := source.HealthCheck(timeout)
 		if err != nil {

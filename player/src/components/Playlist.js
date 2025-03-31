@@ -1,5 +1,5 @@
 import React, { Component, createRef } from 'react';
-import { Logger } from '../utils/logger';
+import { Logger } from '../utils/Logger';
 
 class Playlist extends Component {
     constructor(props) {

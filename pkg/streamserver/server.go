@@ -80,6 +80,12 @@ func LoadStreams() error {
 					channel = channels[tvgId]
 					channelsMux.Unlock()
 				}
+
+				if channel.sources.SourceExists(entry) {
+					log.Printf("Stream source already exists: %s\n", entry.URI)
+					continue
+				}
+
 				log.Printf("Adding stream source for %s, for channel %s\n", entry.URI, tvgId)
 				channel.sources.AddSource(entry, Config.Timeout)
 				streamsChan <- channel

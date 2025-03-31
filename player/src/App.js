@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Player from './components/Player';
 import Playlist from './components/Playlist';
+import Overlay from './components/Overlay';
 import Config from './components/Config';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap-icons/font/bootstrap-icons.css';
-import { Logger } from './utils/logger';
+import { Logger } from './utils/Logger';
 
 function App() {
-    const channelNameRef = useRef(null);
     const channelNumberRef = useRef(null);
     const playlistRef = useRef(null);
+    const overlayRef = useRef(null);
+
     const [showConfig, setShowConfig] = useState(false);
-    const [channelNameVisible, setChannelNameVisible] = useState(false);
-    const [channelNumberVisible, setChannelNumberVisible] = useState(false);
     const [currentChannel, setCurrentChannel] = useState(false);
 
     var channelNum = 0;
@@ -89,7 +89,7 @@ function App() {
                 const digit = parseInt(event.key, 10);
                 channelNum = channelNum * 10 + digit;
                 channelNumberRef.current.innerText = channelNum;
-                setChannelNumberVisible(true);
+                overlayRef.current.showChannelNumber(true);
 
                 if (channelInputTimeout) {
                     clearTimeout(channelInputTimeout);
@@ -116,8 +116,9 @@ function App() {
     }, []);
 
     useEffect(() => {
-        setChannelNameVisible(true);
-        setChannelNumberVisible(true);
+        overlayRef.current.showChannelName(true);
+        overlayRef.current.showChannelNumber(true);
+        overlayRef.current.setCurrentChannel(currentChannel);
     }, [currentChannel]);
 
     const handleVideoPlay = () => {
@@ -125,8 +126,8 @@ function App() {
             clearTimeout(infoTimeout);
         }
         infoTimeout = setTimeout(() => {
-            setChannelNameVisible(false);
-            setChannelNumberVisible(false);
+            overlayRef.current.hideChannelName();
+            overlayRef.current.hideChannelNumber();
         }, 3000);
     }
 
@@ -151,14 +152,11 @@ function App() {
                     source={currentChannel ? currentChannel.source : ''}
                     onPlay={handleVideoPlay}
                 />
-                <div ref={channelNameRef} className="channel-name" style={{
-                    opacity: channelNameVisible ? 1 : 0,
-                    transition: channelNameVisible ? "" : "opacity 2s ease-out"
-                }} >{currentChannel ? currentChannel.tvgName : ""}</div>
-                <div ref={channelNumberRef} className="channel-number" style={{
-                    opacity: channelNumberVisible ? 1 : 0,
-                    transition: channelNumberVisible ? "" : "opacity 2s ease-out"
-                }} >{currentChannel ? currentChannel.channel_num + 1 : 0}</div>
+            </div>
+            <div className="overlay">
+                <Overlay
+                    ref={overlayRef}
+                />
             </div>
         </div>
     );
