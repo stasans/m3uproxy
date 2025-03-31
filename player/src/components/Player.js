@@ -13,7 +13,6 @@ class Player extends Component {
         this.playerRef = null;
 
         this.state = {
-            isTV: /Philips|NETTV|SmartTvA|_TV_MT9288/i.test(navigator.userAgent),
             EMESupported: typeof window.MediaKeys !== "undefined" && typeof window.navigator.requestMediaKeySystemAccess === "function",
             isMobile: navigator.userAgent.toLowerCase().indexOf('mobile') !== -1,
             licensingUrl: '/drm/licensing',

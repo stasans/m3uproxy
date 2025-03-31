@@ -10,7 +10,8 @@ class Playlist extends Component {
         this.state = {
             channelNumberVisible: true,
             channelNameVisible: true,
-            currentChannel: null,
+            channelName: "",
+            channelNumber: 0,
         };
     }
 
@@ -39,23 +40,32 @@ class Playlist extends Component {
         this.setState({ channelNameVisible: false });
     }
 
-    setCurrentChannel = (channel) => {
-        this.setState({ currentChannel: channel });
+    setChannelName = (name) => {
+        this.setState({ channelName: name });
+    }
+
+    setChannelNumber = (number) => {
+        this.setState({ channelNumber: number });
     }
 
     render() {
-        const { currentChannel, channelNumberVisible, channelNameVisible } = this.state;
+        const {
+            channelNumberVisible,
+            channelNameVisible,
+            channelName,
+            channelNumber
+        } = this.state;
 
         return (
             <div className="overlay">
                 <div ref={this.channelNameRef} className="channel-name" style={{
                     opacity: channelNameVisible ? 1 : 0,
                     transition: channelNameVisible ? "" : "opacity 2s ease-out"
-                }} >{currentChannel ? currentChannel.tvgName : ""}</div>
+                }} >{channelName}</div>
                 <div ref={this.channelNumberRef} className="channel-number" style={{
                     opacity: channelNumberVisible ? 1 : 0,
                     transition: channelNumberVisible ? "" : "opacity 2s ease-out"
-                }} >{currentChannel ? currentChannel.channel_num + 1 : 0}</div>
+                }} >{channelNumber}</div>
             </div>
         );
     }

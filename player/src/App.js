@@ -22,7 +22,6 @@ function App() {
     useEffect(() => {
         const handleKeyDown = (event) => {
 
-            Logger.info('Key pressed:', event.key);
             // Page up/down key handling
             if (event.key === 'PageUp') {
                 event.preventDefault();
@@ -37,11 +36,17 @@ function App() {
             }
 
             // M show/hide config
-            if (event.key === 'm') {
+            if (event.key === 'm' || event.key === 'ColorF0Red') {
                 event.preventDefault();
                 setShowConfig(!showConfig);
                 return;
             }
+
+            // Key pressed:ColorF2Yellow
+            // Key pressed:ColorF3Blue
+            // Key pressed:MediaStop
+            // Key pressed:MediaRewind
+            // Key pressed:MediaFastForward
 
             // F key to toggle fullscreen
             if (event.key === 'f') {
@@ -70,7 +75,7 @@ function App() {
             }
 
             // Space key to pause/play
-            if (event.key === ' ') {
+            if (event.key === ' ' || event.key === 'MediaPlay' || event.key === 'Pause') {
                 event.preventDefault();
                 const video = document.querySelector('video');
                 if (video) {
@@ -88,7 +93,7 @@ function App() {
                 event.preventDefault();
                 const digit = parseInt(event.key, 10);
                 channelNum = channelNum * 10 + digit;
-                channelNumberRef.current.innerText = channelNum;
+                overlayRef.current.setChannelNumber(channelNum);
                 overlayRef.current.showChannelNumber(true);
 
                 if (channelInputTimeout) {
@@ -116,9 +121,10 @@ function App() {
     }, []);
 
     useEffect(() => {
+        overlayRef.current.setChannelName(currentChannel ? currentChannel.name : '');
+        overlayRef.current.setChannelNumber(currentChannel ? currentChannel.number + 1 : 0);
         overlayRef.current.showChannelName(true);
         overlayRef.current.showChannelNumber(true);
-        overlayRef.current.setCurrentChannel(currentChannel);
     }, [currentChannel]);
 
     const handleVideoPlay = () => {

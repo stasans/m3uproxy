@@ -52,15 +52,15 @@ class Playlist extends Component {
                 const items = [];
                 let item = {};
 
-                let channel_num = 0;
+                let number = 0;
                 lines.forEach((line) => {
                     if (line.startsWith("#EXTINF:")) {
                         if (item.source) items.push(item);
-                        item = { tvgName: '', tvgLogo: '', source: '', channel_num: channel_num++ };
-                        const tvgName = line.split(',')[1];
-                        item.tvgName = tvgName;
+                        item = { name: '', logo: '', source: '', number: number++ };
+                        const name = line.split(',')[1];
+                        item.name = name;
                         const logoMatch = line.match(/tvg-logo="([^"]+)"/);
-                        if (logoMatch) item.tvgLogo = logoMatch[1];
+                        if (logoMatch) item.logo = logoMatch[1];
                     } else if (line && !line.startsWith("#")) {
                         item.source = line;
                     }
@@ -93,13 +93,13 @@ class Playlist extends Component {
     loadImages = async () => {
         const { playlistItems } = this.state;
         for (const item of playlistItems) {
-            if (item.tvgLogo) {
+            if (item.logo) {
                 try {
-                    const img = await this.loadImage(item.tvgLogo);
+                    const img = await this.loadImage(item.logo);
                     this.setState(prevState => ({
                         images: {
                             ...prevState.images,
-                            [item.tvgLogo]: img.src,
+                            [item.logo]: img.src,
                         },
                     }));
                 } catch (error) {
@@ -144,7 +144,7 @@ class Playlist extends Component {
         }
         localStorage.setItem('current_channel_index', index);
         this.props.setCurrentChannel(playlistItems[index]);
-        Logger.info('Channel changed to:', playlistItems[index].tvgName);
+        Logger.info('Channel changed to:', playlistItems[index].name);
     };
 
     onChannelClick = (item) => {
@@ -153,9 +153,9 @@ class Playlist extends Component {
         if (channelIndex !== -1) {
             localStorage.setItem('current_channel_index', channelIndex);
             this.props.setCurrentChannel(item);
-            Logger.info('Channel clicked:', item.tvgName);
+            Logger.info('Channel clicked:', item.name);
         } else {
-            Logger.error('Channel not found in playlist:', item.tvgName);
+            Logger.error('Channel not found in playlist:', item.name);
         }
     };
 
@@ -237,10 +237,10 @@ class Playlist extends Component {
                             className="channel"
                             onClick={() => this.onChannelClick(item)}
                         >
-                            {item.tvgLogo && images[item.tvgLogo] ? (
-                                <img src={images[item.tvgLogo]} alt={item.tvgName} className="logo" />
+                            {item.logo && images[item.logo] ? (
+                                <img src={images[item.logo]} alt={item.name} className="logo" />
                             ) : (
-                                <span className="title">{item.tvgName}</span>
+                                <span className="title">{item.name}</span>
                             )}
                         </div>
                     ))}
