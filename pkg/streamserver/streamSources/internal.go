@@ -11,6 +11,30 @@ import (
 	"github.com/elnormous/contenttype"
 )
 
+var supportedMediaTypes = []contenttype.MediaType{
+	contenttype.NewMediaType("application/vnd.apple.mpegurl"),
+	contenttype.NewMediaType("application/x-mpegurl"),
+	contenttype.NewMediaType("audio/x-mpegurl"),
+	contenttype.NewMediaType("audio/mpeg"),
+	contenttype.NewMediaType("audio/aacp"),
+	contenttype.NewMediaType("audio/aac"),
+	contenttype.NewMediaType("audio/mp4"),
+	contenttype.NewMediaType("audio/mp3"),
+	contenttype.NewMediaType("audio/ac3"),
+	contenttype.NewMediaType("audio/x-aac"),
+	contenttype.NewMediaType("video/mp2t"),
+	contenttype.NewMediaType("video/m2ts"),
+	contenttype.NewMediaType("video/mp4"),
+	contenttype.NewMediaType("binary/octet-stream"),
+	contenttype.NewMediaType("application/octet-stream"),
+	contenttype.NewMediaType("application/dash+xml"),
+}
+
+func contentTypeAllowed(resp *http.Response) (contenttype.MediaType, bool) {
+	ct := contenttype.NewMediaType(resp.Header.Get("Content-Type"))
+	return ct, ct.MatchesAny(supportedMediaTypes...)
+}
+
 func executeRequest(method, URI string, transport *http.Transport, headers map[string]string, timeout int) (*http.Response, error) {
 
 	client := &http.Client{
@@ -51,13 +75,12 @@ func verifyStream(mediaURI string, transport *http.Transport, headers map[string
 		return contenttype.MediaType{}, err
 	}
 
-	ct := resp.Header.Get("Content-Type")
-	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-	if err != nil {
-		return contenttype.MediaType{}, err
+	ct, valid := contentTypeAllowed(resp)
+	if !valid {
+		return contenttype.MediaType{}, errors.New("invalid content type")
 	}
 
-	if mediaType.Subtype == "vnd.apple.mpegurl" || mediaType.Subtype == "x-mpegurl" {
+	if ct.Subtype == "vnd.apple.mpegurl" || ct.Subtype == "x-mpegurl" {
 		m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
 		if err != nil {
 			return contenttype.MediaType{}, err
@@ -79,5 +102,5 @@ func verifyStream(mediaURI string, transport *http.Transport, headers map[string
 		return verifyStream(uri.String(), transport, headers, timeout)
 	}
 
-	return mediaType, nil
+	return ct, nil
 }

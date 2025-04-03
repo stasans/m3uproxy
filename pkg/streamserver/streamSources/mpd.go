@@ -9,7 +9,6 @@ import (
 	"path"
 
 	mpd "github.com/a13labs/m3uproxy/pkg/mpdparser"
-	"github.com/elnormous/contenttype"
 	"github.com/gorilla/mux"
 )
 
@@ -101,9 +100,8 @@ func (stream *MPDStreamSource) Serve(w http.ResponseWriter, r *http.Request, tim
 		}
 		defer resp.Body.Close()
 
-		ct := resp.Header.Get("Content-Type")
-		_, _, err = contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-		if err != nil {
+		ct, valid := contentTypeAllowed(resp)
+		if !valid {
 			w.WriteHeader(http.StatusUnsupportedMediaType)
 			return
 		}
@@ -113,7 +111,7 @@ func (stream *MPDStreamSource) Serve(w http.ResponseWriter, r *http.Request, tim
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Content-Type", ct.String())
 		mpdPlaylist.WriteTo(w)
 
 	default:
@@ -130,14 +128,13 @@ func (stream *MPDStreamSource) Serve(w http.ResponseWriter, r *http.Request, tim
 		}
 		defer resp.Body.Close()
 
-		ct := resp.Header.Get("Content-Type")
-		_, _, err = contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-		if err != nil {
+		ct, valid := contentTypeAllowed(resp)
+		if !valid {
 			w.WriteHeader(http.StatusUnsupportedMediaType)
 			return
 		}
 
-		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Content-Type", ct.String())
 		io.Copy(w, resp.Body)
 	}
 }

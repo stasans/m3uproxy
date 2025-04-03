@@ -51,8 +51,21 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 
 		log.Printf("Provider: %s\n", providerName)
 		playlist := provider.GetPlaylist()
+		ignoreTags := config.Providers[providerName].IgnoreTags
 		for _, entry := range playlist.Entries {
-			tvgId := entry.TVGTags.GetValue("tvg-id")
+
+			skip := false
+			for _, tag := range entry.ExtInfTags {
+				v, ok := ignoreTags[tag.Tag]
+				skip = skip || (ok && v == tag.Value)
+			}
+
+			if skip {
+				log.Printf("Channel '%s' is ignored, skipping.", entry.Title)
+				continue
+			}
+
+			tvgId := entry.ExtInfTags.GetValue("tvg-id")
 			if tvgId == "" {
 				tvgId = entry.Title
 			}
@@ -103,7 +116,7 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 
 		for needle, channel := range config.ChannelOrder {
 			for pos := needle; pos < len(masterPlaylist.Entries); pos++ {
-				if masterPlaylist.Entries[pos].TVGTags.GetValue("tvg-id") == channel {
+				if masterPlaylist.Entries[pos].ExtInfTags.GetValue("tvg-id") == channel {
 					if needle == pos {
 						break
 					}

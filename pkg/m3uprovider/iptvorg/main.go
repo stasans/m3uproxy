@@ -170,29 +170,29 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 
 				headers["http-user-agent"] = stream.UserAgent
 
-				tvgtags := make(m3uparser.M3UTvgTags, 0)
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags := make(m3uparser.M3UExtinfTags, 0)
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-id",
 					Value: cache.iptvChannel.ID,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-name",
 					Value: cache.iptvChannel.Name,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-logo",
 					Value: cache.iptvChannel.Logo,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-country",
 					Value: cache.iptvChannel.Country,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-group",
 					Value: "TV",
 				})
 				if cache.iptvChannel.Categories != nil {
-					tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+					extinftags = append(extinftags, m3uparser.M3UTvgTag{
 						Tag:   "tvg-type",
 						Value: cache.iptvChannel.Categories[0],
 					})
@@ -201,7 +201,7 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 				tags := make(m3uparser.M3UTags, 0)
 				tags = append(tags, m3uparser.M3UTag{
 					Tag:   "EXTINF",
-					Value: fmt.Sprintf("-1 %s, %s", tvgtags.String(), cache.iptvChannel.Name),
+					Value: fmt.Sprintf("-1 %s, %s", extinftags.String(), cache.iptvChannel.Name),
 				})
 
 				for k, v := range headers {
@@ -212,10 +212,10 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 				}
 
 				cache.m3uEntry = &m3uparser.M3UEntry{
-					Title:   cache.iptvChannel.Name,
-					URI:     stream.URL,
-					Tags:    tags,
-					TVGTags: tvgtags,
+					Title:      cache.iptvChannel.Name,
+					URI:        stream.URL,
+					Tags:       tags,
+					ExtInfTags: extinftags,
 				}
 
 				entries = append(entries, *cache.m3uEntry)

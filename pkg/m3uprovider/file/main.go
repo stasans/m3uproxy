@@ -40,5 +40,6 @@ func NewM3UFileProvider(config json.RawMessage) *M3UFileProvider {
 }
 
 func (p *M3UFileProvider) GetPlaylist() *m3uparser.M3UPlaylist {
+
 	return &p.playlist
 }
