@@ -21,7 +21,7 @@ func NewPlayerHandler(config *ServerConfig) *PlayerHandler {
 
 	p := PlayerHandler{
 		config:      config,
-		playerFiles: make(map[string]*zip.File),
+		playerFiles: nil,
 	}
 
 	if err := p.CachePlayer(); err != nil {
