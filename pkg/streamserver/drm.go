@@ -2,12 +2,11 @@ package streamserver
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/gorilla/mux"
+	"github.com/a13labs/m3uproxy/pkg/logger"
 )
 
 type streamLicense struct {
@@ -68,7 +67,7 @@ func licenseKeysRequest(w http.ResponseWriter, r *http.Request) {
 	ok := auth.VerifyToken(token)
 	if !ok {
 		http.Error(w, "Forbidden", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
+		logger.Errorf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.", r.URL.Path)
 		return
 	}
 
@@ -91,9 +90,4 @@ func licenseKeysRequest(w http.ResponseWriter, r *http.Request) {
 	// Return the license
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(licenses)
-}
-
-func registerLicenseRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/drm/licensing", basicAuth(licenseKeysRequest))
-	return r
 }

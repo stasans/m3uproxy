@@ -9,7 +9,7 @@ func TestParseTvgTag(t *testing.T) {
 
 	expectedTvgID := "Channel 1"
 	expectedTvgLogo := "logo1.png"
-	tags := ParseTVGTags(data[2:])
+	tags := ExtractExtinfTags(data[2:])
 	if len(tags) != 2 {
 		t.Errorf("Unexpected number of tags. Expected: 2, Got: %d", len(tags))
 	}

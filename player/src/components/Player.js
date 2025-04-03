@@ -1,16 +1,11 @@
 import React, { Component, createRef } from 'react';
-import {
-    Player as ShakaPlayer,
-    polyfill as ShakaPolyfill
-} from "shaka-player/dist/shaka-player.ui";
-
 class Player extends Component {
 
     constructor(props) {
         super(props);
-        this.videoRef = createRef();
+        this.video = createRef();
         this.videoContainerRef = createRef();
-        this.playerRef = null;
+        this.player = null;
 
         this.state = {
             EMESupported: typeof window.MediaKeys !== "undefined" && typeof window.navigator.requestMediaKeySystemAccess === "function",
@@ -23,7 +18,21 @@ class Player extends Component {
         }
     }
 
-    componentDidMount() {
+    async componentDidMount() {
+
+        let ShakaPlayer, ShakaPolyfill;
+
+        if (__DEV__) {
+            // Dynamically import the debug version in development
+            const shaka = await import("shaka-player/dist/shaka-player.ui.debug");
+            ShakaPlayer = shaka.Player;
+            ShakaPolyfill = shaka.polyfill;
+        } else {
+            // Dynamically import the production version in production
+            const shaka = await import("shaka-player/dist/shaka-player.ui");
+            ShakaPlayer = shaka.Player;
+            ShakaPolyfill = shaka.polyfill;
+        }
 
         if (this.state.EMESupported) {
             console.log('EME Supported, skipping encrypted content');
@@ -46,7 +55,7 @@ class Player extends Component {
                         }
                         keys[key.kid] = key.k;
                     }
-                    this.playerRef.configure({
+                    this.player.configure({
                         drm: {
                             clearKeys: keys
                         }
@@ -57,38 +66,44 @@ class Player extends Component {
             console.log('EME Not Supported');
         }
 
-        this.playerRef = new ShakaPlayer(this.videoRef.current);
-
-        // Handle player errors
-        this.playerRef.addEventListener('error', (event) => {
+        this.player = new ShakaPlayer();
+        this.player.addEventListener('error', (event) => {
             console.error('Shaka Player Error:', event.detail);
         });
-    }
 
-    componentDidUpdate(prevProps) {
-        const { source, onLoad, onPlay } = this.props;
-
-        if (source !== prevProps.source && this.playerRef) {
-            this.playerRef.load(source).then(() => {
-                if (onLoad) {
-                    onLoad();
-                }
-                this.videoRef.current.play().then(() => {
-                    if (onPlay) {
-                        onPlay();
+        // Attach the player to the video element
+        this.player.attach(this.video.current).then(() => {
+            const { source, onLoad, onPlay, onReady } = this.props;
+            console.log('Player attached to video element');
+            if (onReady) {
+                onReady();
+            }
+            if (source) {
+                this.player.load(source).then(() => {
+                    console.log('Video loaded successfully');
+                    if (onLoad) {
+                        onLoad();
                     }
+                    this.video.current.play().then(() => {
+                        if (onPlay) {
+                            onPlay();
+                        }
+                    }).catch((err) => {
+                        this.handlePlayerError(err);
+                    });
                 }).catch((err) => {
                     this.handlePlayerError(err);
                 });
-            }).catch((err) => {
-                this.handlePlayerError(err);
-            });
-        }
+            }
+        }).catch((err) => {
+            console.error('Error attaching player:', err);
+        });
     }
 
+
     componentWillUnmount() {
-        if (this.playerRef) {
-            this.playerRef.destroy();
+        if (this.player) {
+            this.player.destroy();
         }
     }
 
@@ -118,18 +133,46 @@ class Player extends Component {
     };
 
     handleVideoClick = () => {
-        if (this.videoRef.current.paused) {
-            this.videoRef.current.play();
+        if (this.video.current.paused) {
+            this.video.current.play();
         } else {
-            this.videoRef.current.pause();
+            this.video.current.pause();
         }
     };
+
+    load = (source) => {
+        const { onLoad } = this.props;
+
+        if (this.player) {
+            this.player.load(source).then(() => {
+                if (onLoad) {
+                    onLoad();
+                }
+            }).catch((err) => {
+                this.handlePlayerError(err);
+            });
+        }
+    }
+
+    play = () => {
+        const { onPlay } = this.props;
+
+        if (this.video.current) {
+            this.video.current.play().then(() => {
+                if (onPlay) {
+                    onPlay();
+                }
+            }).catch((err) => {
+                this.handlePlayerError(err);
+            });
+        }
+    }
 
     render() {
         return (
             <div ref={this.videoContainerRef} className="player-container">
                 <video
-                    ref={this.videoRef}
+                    ref={this.video}
                     autoPlay
                     className="player"
                     onClick={this.handleVideoClick}

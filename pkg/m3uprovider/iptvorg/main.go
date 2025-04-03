@@ -3,7 +3,6 @@ package iptvorg
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 
@@ -63,13 +62,11 @@ func getChannels(config IPTVOrgConfig) (map[string]cachedEntry, error) {
 
 	resp, err := http.Get(IPTV_API_URL + "/channels.json")
 	if err != nil {
-		log.Printf("Error getting channels: %s", err)
 		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Error getting channels: %s", resp.Status)
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch channels: %s", resp.Status)
 	}
 
 	defer resp.Body.Close()
@@ -78,7 +75,6 @@ func getChannels(config IPTVOrgConfig) (map[string]cachedEntry, error) {
 	err = json.NewDecoder(resp.Body).Decode(&remoteChannels)
 
 	if err != nil {
-		log.Printf("Error decoding channels: %s", err)
 		return nil, err
 	}
 
@@ -94,7 +90,6 @@ func getChannels(config IPTVOrgConfig) (map[string]cachedEntry, error) {
 			inCountries = inCountries || channel.Country == country
 		}
 		if inCategories && inCountries {
-			log.Printf("Adding channel %s, id: %s", channel.Name, channel.ID)
 			channels[channel.ID] = cachedEntry{
 				iptvChannel: &remoteChannels[i],
 				m3uEntry:    nil,
@@ -110,12 +105,10 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 	resp, err := http.Get(IPTV_API_URL + "/streams.json")
 
 	if err != nil {
-		log.Printf("Error getting streams: %s", err)
 		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Error getting streams: %s", resp.Status)
 		return nil, err
 	}
 
@@ -124,13 +117,11 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 	err = json.NewDecoder(resp.Body).Decode(&streams)
 
 	if err != nil {
-		log.Printf("Error decoding streams: %s", err)
 		return nil, err
 	}
 
 	entries := make(m3uparser.M3UEntries, 0)
 	for id, cache := range channels {
-		log.Printf("Channel %s, id: %s", cache.iptvChannel.Name, id)
 		for _, stream := range streams {
 
 			if stream.Channel == "" {
@@ -139,11 +130,8 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 
 			if stream.Channel == id {
 				if cache.m3uEntry != nil {
-					log.Printf("Stream for channel %s already added, url: %s", cache.iptvChannel.Name, stream.URL)
 					continue
 				}
-
-				log.Printf("Checking stream for channel %s, url: %s", cache.iptvChannel.Name, stream.URL)
 
 				if stream.UserAgent == "" {
 					stream.UserAgent = config.UserAgent
@@ -151,9 +139,7 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 
 				if stream.HTTPReferrer == "" {
 					referrer, err := url.Parse(cache.iptvChannel.Website)
-					if err != nil {
-						log.Printf("Error parsing URL: %s", err)
-					} else {
+					if err == nil {
 						if referrer.Scheme == "" {
 							referrer.Scheme = "http"
 						}
@@ -170,29 +156,29 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 
 				headers["http-user-agent"] = stream.UserAgent
 
-				tvgtags := make(m3uparser.M3UTvgTags, 0)
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags := make(m3uparser.M3UExtinfTags, 0)
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-id",
 					Value: cache.iptvChannel.ID,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-name",
 					Value: cache.iptvChannel.Name,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-logo",
 					Value: cache.iptvChannel.Logo,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-country",
 					Value: cache.iptvChannel.Country,
 				})
-				tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+				extinftags = append(extinftags, m3uparser.M3UTvgTag{
 					Tag:   "tvg-group",
 					Value: "TV",
 				})
 				if cache.iptvChannel.Categories != nil {
-					tvgtags = append(tvgtags, m3uparser.M3UTvgTag{
+					extinftags = append(extinftags, m3uparser.M3UTvgTag{
 						Tag:   "tvg-type",
 						Value: cache.iptvChannel.Categories[0],
 					})
@@ -201,7 +187,7 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 				tags := make(m3uparser.M3UTags, 0)
 				tags = append(tags, m3uparser.M3UTag{
 					Tag:   "EXTINF",
-					Value: fmt.Sprintf("-1 %s, %s", tvgtags.String(), cache.iptvChannel.Name),
+					Value: fmt.Sprintf("-1 %s, %s", extinftags.String(), cache.iptvChannel.Name),
 				})
 
 				for k, v := range headers {
@@ -212,10 +198,10 @@ func getStreams(channels map[string]cachedEntry, config IPTVOrgConfig) ([]m3upar
 				}
 
 				cache.m3uEntry = &m3uparser.M3UEntry{
-					Title:   cache.iptvChannel.Name,
-					URI:     stream.URL,
-					Tags:    tags,
-					TVGTags: tvgtags,
+					Title:      cache.iptvChannel.Name,
+					URI:        stream.URL,
+					Tags:       tags,
+					ExtInfTags: extinftags,
 				}
 
 				entries = append(entries, *cache.m3uEntry)
@@ -235,28 +221,20 @@ func NewIPTVOrgProvider(config json.RawMessage) *IPTVOrgProvider {
 	cfg := IPTVOrgConfig{}
 	err := json.Unmarshal([]byte(config), &cfg)
 	if err != nil {
-		log.Println("Error parsing config")
 		return nil
 	}
 
-	log.Println("Config:")
-	log.Printf("Categories: %v", cfg.Categories)
-	log.Printf("Countries: %v", cfg.Countries)
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = DefaultUserAgent
 	}
 
-	log.Println("Getting channels from iptv.org")
 	channels, err := getChannels(cfg)
 	if err != nil {
-		log.Println("Error getting channels")
 		return nil
 	}
 
-	log.Println("Getting streams from iptv.org")
 	streams, err := getStreams(channels, cfg)
 	if err != nil {
-		log.Println("Error getting streams")
 		return nil
 	}
 

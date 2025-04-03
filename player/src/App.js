@@ -8,9 +8,9 @@ import 'bootstrap-icons/font/bootstrap-icons.css';
 import { Logger } from './utils/Logger';
 
 function App() {
-    const channelNumberRef = useRef(null);
     const playlistRef = useRef(null);
     const overlayRef = useRef(null);
+    const playerRef = useRef(null);
 
     const [showConfig, setShowConfig] = useState(false);
     const [currentChannel, setCurrentChannel] = useState(false);
@@ -125,7 +125,17 @@ function App() {
         overlayRef.current.setChannelNumber(currentChannel ? currentChannel.number + 1 : 0);
         overlayRef.current.showChannelName(true);
         overlayRef.current.showChannelNumber(true);
+        playerRef.current.load(currentChannel ? currentChannel.source : '');
+        playerRef.current.play();
     }, [currentChannel]);
+
+    const handleOnReady = () => {
+        Logger.info('Player is ready');
+        if (currentChannel) {
+            playerRef.current.load(currentChannel.source);
+            playerRef.current.play();
+        }
+    }
 
     const handleVideoPlay = () => {
         if (infoTimeout) {
@@ -155,8 +165,9 @@ function App() {
             </div>
             <div className="content">
                 <Player
-                    source={currentChannel ? currentChannel.source : ''}
+                    ref={playerRef}
                     onPlay={handleVideoPlay}
+                    onReady={handleOnReady}
                 />
             </div>
             <div className="overlay">

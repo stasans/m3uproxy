@@ -15,5 +15,5 @@ API_USER=${API_USER:-admin}
 API_PASSWORD=${API_PASSWORD:-admin}
 
 OUT=output.m3u
-curl -s -X GET -u $API_USER:$API_PASSWORD $API_URL/streams.m3u > $OUT
+curl -s -X GET -u $API_USER:$API_PASSWORD $API_URL/channels.m3u > $OUT
 echo $OUT

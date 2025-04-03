@@ -9,8 +9,9 @@ import (
 )
 
 type StreamSource interface {
-	Serve(w http.ResponseWriter, r *http.Request, timeout int)
-	HealthCheck(timeout int) error
+	ServeManifest(w http.ResponseWriter, r *http.Request, timeout int)
+	ServeMedia(w http.ResponseWriter, r *http.Request, timeout int)
+	HealthCheck() error
 	Active() bool
 	MediaType() contenttype.MediaType
 	MediaName() string
@@ -24,11 +25,11 @@ type BaseStreamSource struct {
 	StreamSource
 	mediaType        contenttype.MediaType
 	m3u              m3uparser.M3UEntry
-	headers          map[string]string
+	headers          http.Header
 	httpProxy        string
 	forceKodiHeaders bool
 	radio            bool
-	transport        *http.Transport
+	client           *http.Client
 	disableRemap     bool
 	active           bool
 	mux              *sync.Mutex

@@ -7,40 +7,32 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 
 	mpd "github.com/a13labs/m3uproxy/pkg/mpdparser"
-	"github.com/elnormous/contenttype"
 	"github.com/gorilla/mux"
 )
 
 func readMPDUrl(r *http.Request) (*url.URL, error) {
 	vars := mux.Vars(r)
-	document := vars["path"]
-
-	if len(document) > 4 && document[:4] == "mpd-" {
-		// get index of the first slash after mpd-
-		index := 4
-		for i := 4; i < len(document); i++ {
-			if document[i] == '/' {
-				index = i
-				break
-			}
-		}
-		encodedUrl := document[4:index]
-		baseUrl, err := base64.URLEncoding.DecodeString(encodedUrl)
-		if err != nil {
-			return nil, err
-		}
-		targetUrl := document[index+1:]
-		uri, err := url.Parse(string(baseUrl) + "/" + targetUrl)
-		if err != nil {
-			return nil, err
-		}
-
-		return uri, nil
+	parts := strings.Split(vars["path"], "/")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid path")
+	}
+	encodedUrl := parts[0]
+	baseUrl, err := base64.URLEncoding.DecodeString(encodedUrl)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("invalid mpd url: %s", document)
+	index := strings.Index(vars["path"], "/")
+	targetUrl := vars["path"][index+1:]
+	uri, err := url.Parse(string(baseUrl) + "/" + targetUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	return uri, nil
 }
 
 func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
@@ -60,7 +52,7 @@ func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
 					basePath := path.Dir(resp.Request.URL.Path)
 					uri.Path = path.Join(basePath, uri.Path)
 					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
-					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("mpd-%s/", remap)})
+					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("media/%s/", remap)})
 					continue
 				}
 
@@ -77,7 +69,7 @@ func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
 					}
 
 					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
-					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value = fmt.Sprintf("mpd-%s/", remap)
+					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL[l].Value = fmt.Sprintf("media/%s/", remap)
 				}
 			}
 		}
@@ -85,61 +77,57 @@ func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
 	return mpdPlaylist, nil
 }
 
-func (stream *MPDStreamSource) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
+func (stream *MPDStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
 
-	vars := mux.Vars(r)
+	// if the cache is empty, we must be serving the master playlist
+	uri, _ := url.Parse(stream.m3u.URI)
 
-	switch vars["path"] {
-	case "master.mpd":
-		// if the cache is empty, we must be serving the master playlist
-		uri, _ := url.Parse(stream.m3u.URI)
-
-		resp, err := executeRequest("GET", uri.String(), stream.transport, stream.headers, timeout)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		defer resp.Body.Close()
-
-		ct := resp.Header.Get("Content-Type")
-		_, _, err = contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-		if err != nil {
-			w.WriteHeader(http.StatusUnsupportedMediaType)
-			return
-		}
-
-		mpdPlaylist, err := remapMPDPlaylist(resp)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", ct)
-		mpdPlaylist.WriteTo(w)
-
-	default:
-		uri, err := readMPDUrl(r)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		resp, err := executeRequest("GET", uri.String(), stream.transport, stream.headers, timeout)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		defer resp.Body.Close()
-
-		ct := resp.Header.Get("Content-Type")
-		_, _, err = contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-		if err != nil {
-			w.WriteHeader(http.StatusUnsupportedMediaType)
-			return
-		}
-
-		w.Header().Set("Content-Type", ct)
-		io.Copy(w, resp.Body)
+	resp, err := executeRequest("GET", uri.String(), stream.client, stream.headers)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
+	defer resp.Body.Close()
+
+	ct, valid := contentTypeAllowed(resp)
+	if !valid {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	mpdPlaylist, err := remapMPDPlaylist(resp)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", ct.String())
+	mpdPlaylist.WriteTo(w)
+
+}
+
+func (stream *MPDStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
+
+	uri, err := readMPDUrl(r)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	resp, err := executeRequest("GET", uri.String(), stream.client, stream.headers)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	ct, valid := contentTypeAllowed(resp)
+	if !valid {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	w.Header().Set("Content-Type", ct.String())
+	io.Copy(w, resp.Body)
 }
 
 func (stream *MPDStreamSource) MasterPlaylist() string {

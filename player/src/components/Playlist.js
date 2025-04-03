@@ -10,13 +10,13 @@ class Playlist extends Component {
 
 
         this.state = {
-            channelsUrl: '/streams.m3u',
+            channelsUrl: '/channels.m3u',
             playlistItems: [],
             images: {},
         };
 
         if (__DEV__) {
-            this.state.channelsUrl = `http://${window.location.hostname}:8080/streams.m3u`;
+            this.state.channelsUrl = `http://${window.location.hostname}:8080/channels.m3u`;
         }
 
         this.scrollDir = 0;

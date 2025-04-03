@@ -1,19 +1,17 @@
 package streamSources
 
 import (
+	"bufio"
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
-
-	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/gorilla/mux"
+	"strings"
 )
 
-func readMP3Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
+func readM3U8Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
 	orig := r.URL.Query().Get("o")
 	if orig == "" {
 		return url.Parse(stream.m3u.URI)
@@ -27,90 +25,121 @@ func readMP3Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
 	return url.Parse(string(originalUrlBytes))
 }
 
-func remapM3UPlaylist(resp *http.Response) (*m3uparser.M3UPlaylist, error) {
-	m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
+func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
+	buf := bufio.NewReader(resp.Body)
+
+	// Validate header
+	line, err := buf.ReadString('\n')
 	if err != nil {
-		return nil, err
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
-	var filePrefix string
-	switch m3uPlaylist.Type {
-	case "master":
-		filePrefix = "master.m3u8"
-	case "media":
-		filePrefix = "media.ts"
-	default:
-		log.Printf("Unknown m3u8 playlist type: %v\n", m3uPlaylist.Type)
-		return nil, fmt.Errorf("unknown m3u8 playlist type: %v", m3uPlaylist.Type)
+	if !strings.HasPrefix(line, "#EXTM3U") {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
-	for i := range m3uPlaylist.Entries {
-		uri, _ := url.Parse(m3uPlaylist.Entries[i].URI)
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Write([]byte(line))
+	var in_entry = false
+	var playlistType = "master"
 
-		if uri.Scheme == "" {
-			uri.Scheme = resp.Request.URL.Scheme
-			uri.Host = resp.Request.URL.Host
-			basePath := path.Dir(resp.Request.URL.Path)
-			uri.Path = path.Join(basePath, uri.Path)
+	for {
+		line, err := buf.ReadString('\n')
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 
-		remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
-		m3uPlaylist.Entries[i].URI = fmt.Sprintf("%s?o=%s", filePrefix, remap)
-	}
+		if line != "" && !strings.HasPrefix(line, "#") {
+			if in_entry {
+				line = strings.TrimRight(line, "\r\n")
+				if !strings.HasPrefix(line, "http") {
+					basePath := path.Dir(resp.Request.URL.Path)
+					line = resp.Request.URL.Scheme + "://" + path.Join(resp.Request.URL.Host, path.Join(basePath, line))
+				}
 
-	return m3uPlaylist, nil
+				remap := base64.URLEncoding.EncodeToString([]byte(line))
+
+				switch playlistType {
+				case "master":
+					w.Write([]byte(fmt.Sprintf("master.m3u8?o=%s\n", remap)))
+				case "media":
+					w.Write([]byte(fmt.Sprintf("media/media.ts?o=%s\n", remap)))
+				default:
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				in_entry = false
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			continue
+		}
+		w.Write([]byte(line))
+
+		line = strings.TrimPrefix(line, "#")
+		if strings.HasPrefix(line, "EXTINF") || strings.HasPrefix(line, "EXT-X-STREAM-INF") {
+			in_entry = true
+			continue
+		}
+
+		if strings.HasPrefix(line, "EXT-X-INDEPENDENT-SEGMENTS") {
+			playlistType = "master"
+		} else if strings.HasPrefix(line, "EXT-X-MEDIA-SEQUENCE") {
+			playlistType = "media"
+		}
+	}
 }
 
-func (stream *M3UStreamSource) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
+func (stream *M3UStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
 
-	vars := mux.Vars(r)
-
-	switch vars["path"] {
-	case "master.m3u8":
-		uri, err := readMP3Url(r, stream)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		resp, err := executeRequest("GET", uri.String(), stream.transport, stream.headers, timeout)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		defer resp.Body.Close()
-
-		m3uPlaylist, err := remapM3UPlaylist(resp)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-		m3uPlaylist.WriteTo(w)
-
-	case "media.ts":
-		uri, err := readMP3Url(r, stream)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		resp, err := executeRequest("GET", uri.String(), stream.transport, stream.headers, timeout)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		defer resp.Body.Close()
-
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-		io.Copy(w, resp.Body)
-		return
-
-	default:
+	uri, err := readM3U8Url(r, stream)
+	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+
+	resp, err := executeRequest("GET", uri.String(), stream.client, stream.headers)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	if stream.disableRemap {
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	remapM3U8Playlist(resp, w)
+}
+
+func (stream *M3UStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
+
+	uri, err := readM3U8Url(r, stream)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	resp, err := executeRequest("GET", uri.String(), stream.client, stream.headers)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	io.Copy(w, resp.Body)
+	return
+
 }
 
 func (stream *M3UStreamSource) MasterPlaylist() string {

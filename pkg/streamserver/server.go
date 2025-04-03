@@ -3,161 +3,101 @@ package streamserver
 import (
 	"context"
 	"fmt"
-	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/a13labs/m3uproxy/pkg/streamserver/streamSources"
+	"github.com/a13labs/m3uproxy/pkg/logger"
+	"github.com/oschwald/geoip2-golang"
 
 	"github.com/gorilla/mux"
 )
 
-type streamEntry struct {
-	index   int
-	tvgId   string
-	sources streamSources.Sources
+type StreamServer struct {
+	running            bool
+	updateTimer        *time.Timer
+	config             *ServerConfig
+	api                *APIHandler
+	epg                *EPGHandler
+	channels           *ChannelsHandler
+	player             *PlayerHandler
+	restartChan        chan bool
+	router             *mux.Router
+	geoipDb            *geoip2.Reader
+	geoipWhitelist     map[string]bool
+	geoIPCidrWhitelist []*net.IPNet
 }
 
-var (
-	channels          = make(map[string]*streamEntry, 0)
-	channelsMux       sync.Mutex
-	stopStreamLoading = make(chan bool)
-	restartServer     = make(chan bool)
-	running           = false
-
-	updateTimer *time.Timer
-)
-
-// const m3uPlaylist = "master.m3u8"
-
-func LoadStreams() error {
-
-	if err := LoadPlaylist(); err != nil {
-		return err
+// Initialize the server
+func NewStreamServer(configPath string) *StreamServer {
+	s := StreamServer{
+		restartChan: make(chan bool),
+		config:      NewServerConfig(configPath),
+		router:      mux.NewRouter(),
 	}
 
-	var wg sync.WaitGroup
-	var streamsChan = make(chan *streamEntry)
-
-	stopWorkers := make(chan bool)
-	for i := 0; i < Config.NumWorkers; i++ {
-		wg.Add(1)
-		go monitorWorker(streamsChan, stopWorkers, &wg)
-	}
-
-	go func() {
-		for i, entry := range m3uCache.Entries {
-			select {
-			case <-stopStreamLoading:
-				stopWorkers <- true
-				wg.Wait()
-				return
-			default:
-				if entry.URI == "" {
-					continue
-				}
-
-				tvgId := entry.TVGTags.GetValue("tvg-id")
-				radio := entry.TVGTags.GetValue("radio")
-				if tvgId == "" && radio == "" {
-					log.Printf("No tvg-id or radio tag found for %s, skipping\n", entry.URI)
-					continue
-				}
-
-				channel, ok := channels[tvgId]
-				if !ok {
-					channelsMux.Lock()
-					channels[tvgId] = &streamEntry{
-						index:   i,
-						tvgId:   tvgId,
-						sources: streamSources.CreateSources(),
-					}
-					channel = channels[tvgId]
-					channelsMux.Unlock()
-				}
-
-				if channel.sources.SourceExists(entry) {
-					log.Printf("Stream source already exists: %s\n", entry.URI)
-					continue
-				}
-
-				log.Printf("Adding stream source for %s, for channel %s\n", entry.URI, tvgId)
-				channel.sources.AddSource(entry, Config.Timeout)
-				streamsChan <- channel
-			}
-		}
-		close(streamsChan)
-	}()
-
-	wg.Wait()
-
-	return nil
+	return &s
 }
 
-func Run(configPath string) {
+func (s *StreamServer) Run() {
 
-	if err := LoadServerConfig(configPath); err != nil {
-		log.Fatalf("Failed to load server configuration: %v\n", err)
-		return
-	}
+	logger.Init(s.config.data.LogFile)
 
-	setupLogging(Config.LogFile)
+	s.api = NewAPIHandler(s.config, &s.restartChan)
+	s.api.RegisterRoutes(s.router)
+
+	s.channels = NewChannelsHandler(s.config)
+	s.channels.RegisterRoutes(s.router)
+
+	s.epg = NewEPGHandler(s.config)
+	s.epg.RegisterRoutes(s.router)
+
+	s.player = NewPlayerHandler(s.config)
+	s.player.RegisterRoutes(s.router)
+
+	s.router.HandleFunc("/health", s.healthCheckRequest)
 
 	for {
-		log.Printf("Starting M3U Proxy Server\n")
+		logger.Infof("Starting M3U Proxy Server")
 
-		log.Printf("Starting stream server\n")
-		log.Printf("Playlist: %s\n", Config.Playlist)
-		log.Printf("EPG: %s\n", Config.Epg)
+		logger.Infof("Starting stream server")
+		logger.Infof("Playlist: %s", s.config.data.Playlist)
+		logger.Infof("EPG: %s", s.config.data.Epg)
 
-		err := auth.InitializeAuth(Config.Auth)
+		err := auth.InitializeAuth(s.config.data.Auth)
 		if err != nil {
-			log.Printf("Failed to initialize authentication: %s\n", err)
+			logger.Errorf("Failed to initialize authentication: %s", err)
 			return
 		}
 
-		updateTimer = time.NewTimer(time.Duration(Config.ScanTime) * time.Second)
-		running = true
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		s.updateTimer = time.NewTimer(time.Duration(s.config.data.ScanTime) * time.Second)
+		s.running = true
 		go func() {
-			LoadStreams()
+			s.channels.Load(ctx)
 			for {
-				select {
-				case <-stopStreamLoading:
-					log.Println("Stopping stream server")
-					return
-				case <-updateTimer.C:
-					LoadStreams()
-					if running {
-						updateTimer.Reset(time.Duration(Config.ScanTime) * time.Second)
-					}
-				}
-				if !running {
-					break
+				<-s.updateTimer.C
+				s.channels.Load(ctx)
+				if s.running {
+					s.updateTimer.Reset(time.Duration(s.config.data.ScanTime) * time.Second)
 				}
 			}
 		}()
 
-		r := mux.NewRouter()
-		registerHealthCheckRoutes(r)
-		registerAPIRoutes(r)
-		registerPlaylistRoutes(r)
-		registerPlayerRoutes(r)
-		registerEpgRoutes(r)
-		registerLicenseRoutes(r)
-		registerChannelsRoutes(r)
-
-		if configureSecurity() != nil {
-			log.Println("GeoIP database not found, geo-location will not be available.")
+		if s.configureSecurity() != nil {
+			logger.Warn("GeoIP database not found, geo-location will not be available.")
 		}
 
 		server := &http.Server{
-			Addr:    fmt.Sprintf(":%d", Config.Port),
-			Handler: secure(r),
+			Addr:    fmt.Sprintf(":%d", s.config.data.Port),
+			Handler: s.secure(s.router),
 		}
 
 		// Channel to listen for termination signal (SIGINT, SIGTERM)
@@ -165,99 +105,174 @@ func Run(configPath string) {
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 		go func() {
-			log.Printf("Server listening on %s.\n", server.Addr)
+			logger.Infof("Server listening on %s.", server.Addr)
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Println("Server failed:", err)
+				logger.Errorf("Server failed:", err)
 			}
 		}()
 
 		quitServer := false
 		select {
 		case <-sigChan:
-			log.Println("Signal received, shutting down server...")
+			logger.Info("Signal received, shutting down server...")
 			quitServer = true
-		case <-restartServer:
+			cancel()
+		case <-s.restartChan:
 			quitServer = false
 		}
 
-		updateTimer.Stop()
-		running = false
-		stopStreamLoading <- true
-		log.Printf("Stream server stopped\n")
+		s.updateTimer.Stop()
+		s.running = false
+		logger.Info("Stream server stopped")
 
-		cleanGeoIp()
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		s.cleanGeoIp()
 
 		if err := server.Shutdown(ctx); err != nil {
-			log.Println("Server forced to shutdown:", err)
+			logger.Errorf("Server forced to shutdown: %v", err)
 		}
 
 		if quitServer {
-			log.Println("Server shutdown.")
+			logger.Info("Server shutdown.")
 			break
 		}
 	}
 }
 
-func Restart() {
+func (s *StreamServer) Restart() {
 	go func() {
-		log.Println("Server restart in 3 seconds")
+		logger.Info("Server restart in 3 seconds")
 		time.Sleep(3 * time.Second)
-		restartServer <- true
+		s.restartChan <- true
 	}()
 }
 
-func healthCheckRequest(w http.ResponseWriter, r *http.Request) {
-	if channels == nil {
+func (s *StreamServer) healthCheckRequest(w http.ResponseWriter, r *http.Request) {
+	if s.channels == nil {
 		http.Error(w, "Streams not loaded", http.StatusServiceUnavailable)
 		return
 	}
+	// health := map[string]interface{}{
+	//     "status":        "ok",
+	//     "activeStreams": activeStreams,
+	//     "uptime":        time.Since(startTime).String(),
+	// }
+
+	// w.Header().Set("Content-Type", "application/json")
+	// json.NewEncoder(w).Encode(health)
+
 	w.WriteHeader(http.StatusOK)
 }
 
-func streamRequest(w http.ResponseWriter, r *http.Request) {
+func (s *StreamServer) configureSecurity() error {
 
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+	var err error
+
+	if s.config.data.Security.GeoIP.Database == "" {
+		return nil
 	}
 
-	vars := mux.Vars(r)
-	token := vars["token"]
-
-	ok := auth.VerifyToken(token)
-	if !ok {
-		http.Error(w, "Forbidden", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
-		return
+	s.geoipDb, err = geoip2.Open(s.config.data.Security.GeoIP.Database)
+	if err != nil {
+		s.geoipDb = nil
+		return err
 	}
 
-	channelId, ok := vars["channelId"]
-	if !ok {
-		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
-		return
+	s.geoipWhitelist = make(map[string]bool)
+	for _, country := range s.config.data.Security.GeoIP.Whitelist {
+		s.geoipWhitelist[country] = true
 	}
 
-	channelsMux.Lock()
-	defer channelsMux.Unlock()
+	s.geoIPCidrWhitelist = make([]*net.IPNet, 0)
 
-	channel, ok := channels[channelId]
-	if !ok {
-		http.Error(w, "Stream not found", http.StatusNotFound)
-		return
+	for _, cidr := range s.config.data.Security.GeoIP.InternalNetworks {
+		_, ipnet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return err
+		}
+		s.geoIPCidrWhitelist = append(s.geoIPCidrWhitelist, ipnet)
 	}
 
-	if !channel.sources.Active() {
-		http.Error(w, "Stream not active", http.StatusNotFound)
-		return
-	}
-
-	channel.sources.Serve(w, r, Config.Timeout)
+	return nil
 }
 
-func registerChannelsRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/{token}/{channelId}/{path:.*}", streamRequest)
-	return r
+func (s *StreamServer) cleanGeoIp() {
+	if s.geoipDb != nil {
+		s.geoipDb.Close()
+	}
+}
+
+func (s *StreamServer) secure(next http.Handler) http.Handler {
+
+	if len(s.config.data.Security.AllowedCORSDomains) > 0 {
+		next = s.cors(next)
+	}
+
+	if s.geoipDb == nil {
+		return next
+	}
+
+	logger.Info("GeoIP enabled")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		ip := ""
+		if r.Header.Get("X-Real-IP") != "" {
+			ip = r.Header.Get("X-Real-IP")
+		} else if r.Header.Get("X-Forwarded-For") != "" {
+			ips := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
+			ip = ips[0]
+		} else {
+			var err error
+			ip, _, err = net.SplitHostPort(r.RemoteAddr)
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if ip == "" {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		parsedIP := net.ParseIP(ip)
+
+		for _, ipnet := range s.geoIPCidrWhitelist {
+			if ipnet.Contains(parsedIP) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		record, err := s.geoipDb.Country(parsedIP)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		countryCode := record.Country.IsoCode
+		if _, ok := s.geoipWhitelist[countryCode]; !ok {
+			logger.Infof("Access Denied: %s, Country: %s", ip, countryCode)
+			http.Error(w, "Access Denied", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *StreamServer) cors(next http.Handler) http.Handler {
+	logger.Info("CORS enabled")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		w.Header().Set("Access-Control-Allow-Origin", strings.Join(s.config.data.Security.AllowedCORSDomains, ","))
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS, POST, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

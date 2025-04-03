@@ -16,7 +16,7 @@ type SecurityConfig struct {
 	AllowedCORSDomains []string    `json:"allowed_cors_domains,omitempty"`
 }
 
-type ServerConfig struct {
+type ConfigData struct {
 	Port       int             `json:"port"`
 	Playlist   string          `json:"playlist"`
 	Epg        string          `json:"epg"`
@@ -28,12 +28,47 @@ type ServerConfig struct {
 	LogFile    string          `json:"log_file,omitempty"`
 }
 
-var (
-	Config     *ServerConfig
-	ConfigPath string
-)
+type ServerConfig struct {
+	path string
+	data ConfigData
+}
 
-func (c *ServerConfig) Merge(other ServerConfig) {
+func NewServerConfig(path string) *ServerConfig {
+	c := &ServerConfig{
+		path: path,
+	}
+
+	if err := c.Load(path); err != nil {
+		if os.IsNotExist(err) {
+			c.data = ConfigData{
+				Port:       8080,
+				Playlist:   "playlist.m3u",
+				Epg:        "epg.xml",
+				Timeout:    5,
+				NumWorkers: 4,
+				ScanTime:   60,
+				Security: SecurityConfig{
+					GeoIP: GeoIPConfig{
+						Database:         "GeoLite2-Country.mmdb",
+						Whitelist:        []string{},
+						InternalNetworks: []string{},
+					},
+					AllowedCORSDomains: []string{},
+				},
+				Auth:    json.RawMessage("{}"),
+				LogFile: "server.log",
+			}
+			if err := c.Save(); err != nil {
+				panic(err)
+			}
+		} else {
+			panic(err)
+		}
+	}
+	return c
+}
+
+func (c *ConfigData) Merge(other ConfigData) {
 	if other.Timeout != 0 {
 		c.Timeout = other.Timeout
 	}
@@ -51,7 +86,7 @@ func (c *ServerConfig) Merge(other ServerConfig) {
 	}
 }
 
-func LoadServerConfig(path string) error {
+func (c *ServerConfig) Load(path string) error {
 
 	_, err := os.Stat(path)
 
@@ -66,21 +101,91 @@ func LoadServerConfig(path string) error {
 
 	defer file.Close()
 
-	err = json.NewDecoder(file).Decode(&Config)
+	err = json.NewDecoder(file).Decode(&c.data)
 	if err != nil {
 		return err
 	}
 
-	ConfigPath = path
+	c.path = path
 
 	return nil
 }
 
-func SaveServerConfig(config ServerConfig) error {
+func (c *ServerConfig) Get() ConfigData {
+	return c.data
+}
 
-	Config.Merge(config)
+func (c *ServerConfig) Set(data ConfigData) {
+	c.data = data
+}
 
-	file, err := os.Create(ConfigPath)
+func (c *ServerConfig) GetPath() string {
+	return c.path
+}
+
+func (c *ServerConfig) SetPath(path string) {
+	c.path = path
+}
+
+func (c *ServerConfig) GetPlaylist() string {
+	return c.data.Playlist
+}
+
+func (c *ServerConfig) SetPlaylist(playlist string) {
+	c.data.Playlist = playlist
+}
+
+func (c *ServerConfig) GetEpg() string {
+	return c.data.Epg
+}
+
+func (c *ServerConfig) SetEpg(epg string) {
+	c.data.Epg = epg
+}
+
+func (c *ServerConfig) GetTimeout() int {
+	return c.data.Timeout
+}
+
+func (c *ServerConfig) SetTimeout(timeout int) {
+	c.data.Timeout = timeout
+}
+
+func (c *ServerConfig) GetNumWorkers() int {
+	return c.data.NumWorkers
+}
+
+func (c *ServerConfig) SetNumWorkers(numWorkers int) {
+	c.data.NumWorkers = numWorkers
+}
+
+func (c *ServerConfig) GetScanTime() int {
+	return c.data.ScanTime
+}
+
+func (c *ServerConfig) SetScanTime(scanTime int) {
+	c.data.ScanTime = scanTime
+}
+
+func (c *ServerConfig) GetSecurity() SecurityConfig {
+	return c.data.Security
+}
+
+func (c *ServerConfig) SetSecurity(security SecurityConfig) {
+	c.data.Security = security
+}
+
+func (c *ServerConfig) GetAuth() json.RawMessage {
+	return c.data.Auth
+}
+
+func (c *ServerConfig) SetAuth(auth json.RawMessage) {
+	c.data.Auth = auth
+}
+
+func (c *ServerConfig) Save() error {
+
+	file, err := os.Create(c.path)
 	if err != nil {
 		return err
 	}
@@ -88,5 +193,5 @@ func SaveServerConfig(config ServerConfig) error {
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(Config)
+	return encoder.Encode(c.data)
 }

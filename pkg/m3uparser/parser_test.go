@@ -31,7 +31,7 @@ func TestParseM3UFile0(t *testing.T) {
 	}
 
 	// Assert that the first entry is correct
-	expectedURI := "http://example.com/stream1.m3u8"
+	expectedURI := "http://example.com/channel1.m3u8"
 	expectedDuration := -1
 	expectedTitle := "Channel 1"
 	if playlist.Entries[0].URI != expectedURI || playlist.Entries[0].Duration != expectedDuration || playlist.Entries[0].Title != expectedTitle {
