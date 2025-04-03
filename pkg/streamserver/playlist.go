@@ -198,8 +198,12 @@ func (p *PlaylistHandler) Load(ctx context.Context) error {
 					continue
 				}
 
-				tvgId := entry.TVGTags.GetValue("tvg-id")
-				radio := entry.TVGTags.GetValue("radio")
+				tvgId := entry.ExtInfTags.GetValue("tvg-id")
+				if tvgId == "" {
+					tvgId = entry.Title
+				}
+
+				radio := entry.ExtInfTags.GetValue("radio")
 				if tvgId == "" && radio == "" {
 					log.Printf("No tvg-id or radio tag found for %s, skipping\n", entry.URI)
 					continue

@@ -24,7 +24,6 @@ type StreamServer struct {
 	api                *APIHandler
 	epg                *EPGHandler
 	channels           *PlaylistHandler
-	stopStreamLoadChan chan bool
 	restartChan        chan bool
 	router             *mux.Router
 	geoipDb            *geoip2.Reader
@@ -35,10 +34,9 @@ type StreamServer struct {
 // Initialize the server
 func NewStreamServer(configPath string) *StreamServer {
 	s := StreamServer{
-		stopStreamLoadChan: make(chan bool),
-		restartChan:        make(chan bool),
-		config:             NewServerConfig(configPath),
-		router:             mux.NewRouter(),
+		restartChan: make(chan bool),
+		config:      NewServerConfig(configPath),
+		router:      mux.NewRouter(),
 	}
 
 	return &s
@@ -74,7 +72,7 @@ func (s *StreamServer) Run() {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		s.updateTimer = time.NewTimer(time.Duration(s.config.data.ScanTime) * time.Second)
@@ -82,18 +80,10 @@ func (s *StreamServer) Run() {
 		go func() {
 			s.channels.Load(ctx)
 			for {
-				select {
-				case <-s.stopStreamLoadChan:
-					log.Println("Stopping stream server")
-					return
-				case <-s.updateTimer.C:
-					s.channels.Load(ctx)
-					if s.running {
-						s.updateTimer.Reset(time.Duration(s.config.data.ScanTime) * time.Second)
-					}
-				}
-				if !s.running {
-					break
+				<-s.updateTimer.C
+				s.channels.Load(ctx)
+				if s.running {
+					s.updateTimer.Reset(time.Duration(s.config.data.ScanTime) * time.Second)
 				}
 			}
 		}()
@@ -123,13 +113,13 @@ func (s *StreamServer) Run() {
 		case <-sigChan:
 			log.Println("Signal received, shutting down server...")
 			quitServer = true
+			cancel()
 		case <-s.restartChan:
 			quitServer = false
 		}
 
 		s.updateTimer.Stop()
 		s.running = false
-		s.stopStreamLoadChan <- true
 		log.Printf("Stream server stopped\n")
 
 		s.cleanGeoIp()

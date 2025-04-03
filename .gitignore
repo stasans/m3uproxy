@@ -186,6 +186,7 @@ dist
 # End of https://www.toptal.com/developers/gitignore/api/node
 dev/*
 cache/*
+build/*
 *.log
 *.zip
 *.m3u8
