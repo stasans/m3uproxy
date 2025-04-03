@@ -84,6 +84,7 @@ func (h *APIHandler) configAPIRequest(w http.ResponseWriter, r *http.Request) {
 		err = h.config.Save()
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		return
 	default:
@@ -231,6 +232,7 @@ func (h *APIHandler) playlistAPIRequest(w http.ResponseWriter, r *http.Request) 
 		}
 		if !playlist.Validate() {
 			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		err = playlist.SaveToFile(h.config.data.Playlist)
 		if err != nil {
