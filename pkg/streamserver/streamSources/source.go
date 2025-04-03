@@ -2,17 +2,17 @@ package streamSources
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
 )
 
-func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
+func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) {
 
 	radio := entry.ExtInfTags.GetValue("radio")
 
@@ -25,7 +25,9 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 			case "proxy":
 				proxy = parts[1]
 			default:
-				log.Printf("Unknown M3UPROXYTRANSPORT tag: %s\n", parts[0])
+				// Handle other transport options if needed
+				// For now, we only handle the proxy option
+				// and ignore others.
 			}
 		}
 	}
@@ -40,12 +42,12 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 		}
 	}
 
-	headers := make(map[string]string)
+	headers := http.Header{}
 	m3uproxyTags = entry.SearchTags("M3UPROXYHEADER")
 	for _, tag := range m3uproxyTags {
 		parts := strings.Split(tag.Value, "=")
 		if len(parts) == 2 {
-			headers[parts[0]] = parts[1]
+			headers.Set(parts[0], parts[1])
 		}
 	}
 
@@ -55,16 +57,20 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 		if len(parts) == 2 {
 			switch parts[0] {
 			case "http-user-agent":
-				headers["User-Agent"] = parts[1]
+				headers.Set("User-Agent", parts[1])
 			case "http-referrer":
-				headers["Referer"] = parts[1]
+				headers.Set("Referer", parts[1])
 			default:
 			}
 		}
 	}
 
-	if headers["User-Agent"] == "" {
-		headers["User-Agent"] = "VLC/3.0.11 LibVLC/3.0.11"
+	if headers.Get("User-Agent") == "" {
+		// Default User-Agent for VLC
+		// This is a workaround for some servers that require a User-Agent header
+		// to be set. VLC uses "VLC/3.0.11 LibVLC/3.0.11" as the default User-Agent.
+		// This can be changed to any other User-Agent string if needed.
+		headers.Set("User-Agent", "VLC/3.0.11 LibVLC/3.0.11")
 	}
 
 	m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
@@ -82,10 +88,14 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 
 	// Clear non-standard tags
 	entry.ClearTags()
+	client := &http.Client{
+		Timeout:   time.Duration(timeout) * time.Second,
+		Transport: transport,
+	}
 
-	resp, err := executeRequest("GET", entry.URI, transport, headers, timeout)
+	resp, err := executeRequest("GET", entry.URI, client, headers)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	resp.Body.Close()
@@ -96,8 +106,7 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 
 	ct, valid := contentTypeAllowed(resp)
 	if !valid {
-		log.Printf("Invalid content type: %s\n", ct)
-		return nil
+		return nil, fmt.Errorf("invalid content type: %s", ct)
 	}
 
 	switch {
@@ -109,11 +118,11 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 				httpProxy:        proxy,
 				forceKodiHeaders: forceKodiHeaders,
 				radio:            radio != "",
-				transport:        transport,
+				client:           client,
 				disableRemap:     disableRemap,
 				mux:              &sync.Mutex{},
 			},
-		}
+		}, nil
 	default:
 		return &M3UStreamSource{
 			BaseStreamSource: BaseStreamSource{
@@ -122,16 +131,16 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 				httpProxy:        proxy,
 				forceKodiHeaders: forceKodiHeaders,
 				radio:            radio != "",
-				transport:        transport,
+				client:           client,
 				disableRemap:     disableRemap,
 				mux:              &sync.Mutex{},
 			},
-		}
+		}, nil
 	}
 }
 
-func (stream *BaseStreamSource) HealthCheck(timeout int) error {
-	resp, err := executeRequest("GET", stream.m3u.URI, stream.transport, stream.headers, timeout)
+func (stream *BaseStreamSource) HealthCheck() error {
+	resp, err := executeRequest("GET", stream.m3u.URI, stream.client, stream.headers)
 	if err != nil {
 		return err
 	}
@@ -143,15 +152,12 @@ func (stream *BaseStreamSource) HealthCheck(timeout int) error {
 	}
 	stream.mux.Unlock()
 
-	_, err = verifyStream(stream.m3u.URI, stream.transport, stream.headers, timeout)
+	_, err = verifyStream(stream.m3u.URI, stream.client, stream.headers)
 
 	stream.mux.Lock()
 	stream.active = err == nil
 	stream.mux.Unlock()
 
-	if err != nil {
-		log.Printf("Stream %s is not healthy: %s\n", stream.m3u.Title, err)
-	}
 	return err
 }
 
@@ -217,23 +223,22 @@ func (s *Sources) SourceExists(entry m3uparser.M3UEntry) bool {
 	return false
 }
 
-func (s *Sources) AddSource(entry m3uparser.M3UEntry, timeout int) {
+func (s *Sources) AddSource(entry m3uparser.M3UEntry, timeout int) (bool, error) {
 
 	// Check if the source is already in the list
 	if s.SourceExists(entry) {
-		log.Printf("Stream source already exists: %s\n", entry.URI)
-		return
+		return false, fmt.Errorf("source already exists")
 	}
 
-	source := sourceFactory(entry, timeout)
-	if source == nil {
-		log.Printf("Error registering stream source: %s\n", entry.URI)
-		return
+	source, err := sourceFactory(entry, timeout)
+	if err != nil {
+		return false, err
 	}
 
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	s.sources = append(s.sources, source)
+	return true, nil
 }
 
 func (s *Sources) GetActiveSource() StreamSource {
@@ -242,14 +247,11 @@ func (s *Sources) GetActiveSource() StreamSource {
 	return s.activeSource
 }
 
-func (s *Sources) HealthCheck(timeout int) error {
+func (s *Sources) HealthCheck() error {
 
 	var activeSource StreamSource = nil
 	for _, source := range s.sources {
-		err := source.HealthCheck(timeout)
-		if err != nil {
-			log.Printf("Stream %s is not healthy: %s\n", source.MediaName(), err)
-		}
+		_ = source.HealthCheck()
 		if source.Active() {
 			activeSource = source
 			break
@@ -265,7 +267,7 @@ func (s *Sources) HealthCheck(timeout int) error {
 	return nil
 }
 
-func (s *Sources) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
+func (s *Sources) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
@@ -274,7 +276,19 @@ func (s *Sources) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
 		return
 	}
 
-	s.activeSource.Serve(w, r, timeout)
+	s.activeSource.ServeManifest(w, r, timeout)
+}
+
+func (s *Sources) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	if s.activeSource == nil {
+		http.Error(w, "No active stream source", http.StatusServiceUnavailable)
+		return
+	}
+
+	s.activeSource.ServeMedia(w, r, timeout)
 }
 
 func (s *Sources) Active() bool {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/logger"
 )
 
 type streamLicense struct {
@@ -66,7 +67,7 @@ func licenseKeysRequest(w http.ResponseWriter, r *http.Request) {
 	ok := auth.VerifyToken(token)
 	if !ok {
 		http.Error(w, "Forbidden", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
+		logger.Errorf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.", r.URL.Path)
 		return
 	}
 

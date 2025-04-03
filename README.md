@@ -12,7 +12,7 @@
 
 ## Endpoints
 
-### `/streams.m3u` (Restricted)
+### `/channels.m3u` (Restricted)
 - **Description**: Returns the M3U playlist with all available streams.
 - **Access**: Restricted to authenticated users.
 - **Usage**: This endpoint should be accessed only after proper authentication. It provides a list of streams in the M3U format.
@@ -102,7 +102,7 @@ To modify a user's password, run:
 
 Once the server is up and running, you can access the required endpoints as follows:
 
-- **M3U Playlist**: `[Your Server URL]:[port]/streams.m3u`
+- **M3U Playlist**: `[Your Server URL]:[port]/channels.m3u`
 - **EPG XML**: `[Your Server URL]:[port]/epg.xml`
 
 Ensure that appropriate access controls are configured to restrict access to sensitive endpoints.

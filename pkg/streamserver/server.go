@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/logger"
 	"github.com/oschwald/geoip2-golang"
 
 	"github.com/gorilla/mux"
@@ -23,7 +24,8 @@ type StreamServer struct {
 	config             *ServerConfig
 	api                *APIHandler
 	epg                *EPGHandler
-	channels           *PlaylistHandler
+	channels           *ChannelsHandler
+	player             *PlayerHandler
 	restartChan        chan bool
 	router             *mux.Router
 	geoipDb            *geoip2.Reader
@@ -44,31 +46,32 @@ func NewStreamServer(configPath string) *StreamServer {
 
 func (s *StreamServer) Run() {
 
-	setupLogging(s.config.data.LogFile)
+	logger.Init(s.config.data.LogFile)
 
 	s.api = NewAPIHandler(s.config, &s.restartChan)
 	s.api.RegisterRoutes(s.router)
 
-	s.channels = NewPlaylistHandler(s.config)
+	s.channels = NewChannelsHandler(s.config)
 	s.channels.RegisterRoutes(s.router)
 
 	s.epg = NewEPGHandler(s.config)
 	s.epg.RegisterRoutes(s.router)
 
-	registerPlayerRoutes(s.router)
+	s.player = NewPlayerHandler(s.config)
+	s.player.RegisterRoutes(s.router)
 
 	s.router.HandleFunc("/health", s.healthCheckRequest)
 
 	for {
-		log.Printf("Starting M3U Proxy Server\n")
+		logger.Infof("Starting M3U Proxy Server")
 
-		log.Printf("Starting stream server\n")
-		log.Printf("Playlist: %s\n", s.config.data.Playlist)
-		log.Printf("EPG: %s\n", s.config.data.Epg)
+		logger.Infof("Starting stream server")
+		logger.Infof("Playlist: %s", s.config.data.Playlist)
+		logger.Infof("EPG: %s", s.config.data.Epg)
 
 		err := auth.InitializeAuth(s.config.data.Auth)
 		if err != nil {
-			log.Printf("Failed to initialize authentication: %s\n", err)
+			logger.Errorf("Failed to initialize authentication: %s", err)
 			return
 		}
 
@@ -89,7 +92,7 @@ func (s *StreamServer) Run() {
 		}()
 
 		if s.configureSecurity() != nil {
-			log.Println("GeoIP database not found, geo-location will not be available.")
+			logger.Warn("GeoIP database not found, geo-location will not be available.")
 		}
 
 		server := &http.Server{
@@ -102,16 +105,16 @@ func (s *StreamServer) Run() {
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 		go func() {
-			log.Printf("Server listening on %s.\n", server.Addr)
+			logger.Infof("Server listening on %s.", server.Addr)
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Println("Server failed:", err)
+				logger.Errorf("Server failed:", err)
 			}
 		}()
 
 		quitServer := false
 		select {
 		case <-sigChan:
-			log.Println("Signal received, shutting down server...")
+			logger.Info("Signal received, shutting down server...")
 			quitServer = true
 			cancel()
 		case <-s.restartChan:
@@ -120,16 +123,16 @@ func (s *StreamServer) Run() {
 
 		s.updateTimer.Stop()
 		s.running = false
-		log.Printf("Stream server stopped\n")
+		logger.Info("Stream server stopped")
 
 		s.cleanGeoIp()
 
 		if err := server.Shutdown(ctx); err != nil {
-			log.Println("Server forced to shutdown:", err)
+			logger.Errorf("Server forced to shutdown: %v", err)
 		}
 
 		if quitServer {
-			log.Println("Server shutdown.")
+			logger.Info("Server shutdown.")
 			break
 		}
 	}
@@ -137,7 +140,7 @@ func (s *StreamServer) Run() {
 
 func (s *StreamServer) Restart() {
 	go func() {
-		log.Println("Server restart in 3 seconds")
+		logger.Info("Server restart in 3 seconds")
 		time.Sleep(3 * time.Second)
 		s.restartChan <- true
 	}()
@@ -208,7 +211,7 @@ func (s *StreamServer) secure(next http.Handler) http.Handler {
 		return next
 	}
 
-	log.Println("GeoIP enabled")
+	logger.Info("GeoIP enabled")
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
@@ -249,7 +252,7 @@ func (s *StreamServer) secure(next http.Handler) http.Handler {
 
 		countryCode := record.Country.IsoCode
 		if _, ok := s.geoipWhitelist[countryCode]; !ok {
-			log.Printf("Access Denied: %s, Country: %s\n", ip, countryCode)
+			logger.Infof("Access Denied: %s, Country: %s", ip, countryCode)
 			http.Error(w, "Access Denied", http.StatusForbidden)
 			return
 		}
@@ -259,7 +262,7 @@ func (s *StreamServer) secure(next http.Handler) http.Handler {
 }
 
 func (s *StreamServer) cors(next http.Handler) http.Handler {
-	log.Println("CORS enabled")
+	logger.Info("CORS enabled")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Access-Control-Allow-Origin", strings.Join(s.config.data.Security.AllowedCORSDomains, ","))

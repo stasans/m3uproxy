@@ -2,10 +2,10 @@ package streamSources
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path"
-	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
@@ -35,21 +35,14 @@ func contentTypeAllowed(resp *http.Response) (contenttype.MediaType, bool) {
 	return ct, ct.MatchesAny(supportedMediaTypes...)
 }
 
-func executeRequest(method, URI string, transport *http.Transport, headers map[string]string, timeout int) (*http.Response, error) {
-
-	client := &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
-		Transport: transport,
-	}
+func executeRequest(method, URI string, client *http.Client, headers http.Header) (*http.Response, error) {
 
 	req, err := http.NewRequest(method, URI, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	for key, value := range headers {
-		req.Header.Add(key, value)
-	}
+	req.Header = headers
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -58,7 +51,7 @@ func executeRequest(method, URI string, transport *http.Transport, headers map[s
 
 	code := resp.StatusCode / 100
 	if code != 2 {
-		return nil, errors.New("invalid server status code")
+		return nil, fmt.Errorf("http response code (%d)", resp.StatusCode)
 	}
 
 	if resp.StatusCode == http.StatusNoContent {
@@ -68,9 +61,9 @@ func executeRequest(method, URI string, transport *http.Transport, headers map[s
 	return resp, nil
 }
 
-func verifyStream(mediaURI string, transport *http.Transport, headers map[string]string, timeout int) (contenttype.MediaType, error) {
+func verifyStream(mediaURI string, client *http.Client, headers http.Header) (contenttype.MediaType, error) {
 
-	resp, err := executeRequest("GET", mediaURI, transport, headers, timeout)
+	resp, err := executeRequest("GET", mediaURI, client, headers)
 	if err != nil {
 		return contenttype.MediaType{}, err
 	}
@@ -99,7 +92,7 @@ func verifyStream(mediaURI string, transport *http.Transport, headers map[string
 			uri.Path = path.Join(basePath, uri.Path)
 		}
 
-		return verifyStream(uri.String(), transport, headers, timeout)
+		return verifyStream(uri.String(), client, headers)
 	}
 
 	return ct, nil

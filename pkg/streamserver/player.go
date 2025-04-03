@@ -12,10 +12,33 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// Variable to hold the in-memory zip file structure
-var playerFiles map[string]*zip.File
+type PlayerHandler struct {
+	config      *ServerConfig
+	playerFiles map[string]*zip.File
+}
 
-func playerRequest(w http.ResponseWriter, r *http.Request) {
+func NewPlayerHandler(config *ServerConfig) *PlayerHandler {
+
+	p := PlayerHandler{
+		config:      config,
+		playerFiles: make(map[string]*zip.File),
+	}
+
+	if err := p.CachePlayer(); err != nil {
+		return nil
+	}
+	return &p
+}
+
+func (p *PlayerHandler) RegisterRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/player", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/player/index.html", http.StatusSeeOther)
+	})
+	r.PathPrefix("/player/").HandlerFunc(p.playerRequest)
+	return r
+}
+
+func (p *PlayerHandler) playerRequest(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -26,7 +49,7 @@ func playerRequest(w http.ResponseWriter, r *http.Request) {
 	filePath := strings.TrimPrefix(r.URL.Path, "/player/")
 
 	// Lookup the requested file in the zip archive
-	if zipFile, found := playerFiles[filePath]; found {
+	if zipFile, found := p.playerFiles[filePath]; found {
 		// Open the zip file for reading
 		fileReader, err := zipFile.Open()
 		if err != nil {
@@ -54,12 +77,12 @@ func playerRequest(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func CachePlayer() error {
-	if playerFiles != nil {
+func (p *PlayerHandler) CachePlayer() error {
+	if p.playerFiles != nil {
 		return nil
 	}
 
-	playerFiles = make(map[string]*zip.File)
+	p.playerFiles = make(map[string]*zip.File)
 	if _, err := os.Stat("assets/player.zip"); os.IsNotExist(err) {
 		return err
 	}
@@ -71,19 +94,8 @@ func CachePlayer() error {
 
 	// Store each file in the map with its name as the key
 	for _, f := range zipReader.File {
-		playerFiles[f.Name] = f
+		p.playerFiles[f.Name] = f
 	}
 
 	return nil
-}
-
-func registerPlayerRoutes(r *mux.Router) *mux.Router {
-	if err := CachePlayer(); err != nil {
-		return r
-	}
-	r.HandleFunc("/player", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/player/index.html", http.StatusSeeOther)
-	})
-	r.PathPrefix("/player/").HandlerFunc(playerRequest)
-	return r
 }

@@ -9,8 +9,6 @@ import (
 	"net/url"
 	"path"
 	"strings"
-
-	"github.com/gorilla/mux"
 )
 
 func readM3U8Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
@@ -70,7 +68,7 @@ func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
 				case "master":
 					w.Write([]byte(fmt.Sprintf("master.m3u8?o=%s\n", remap)))
 				case "media":
-					w.Write([]byte(fmt.Sprintf("media.ts?o=%s\n", remap)))
+					w.Write([]byte(fmt.Sprintf("media/media.ts?o=%s\n", remap)))
 				default:
 					w.WriteHeader(http.StatusInternalServerError)
 					return
@@ -99,55 +97,49 @@ func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
 	}
 }
 
-func (stream *M3UStreamSource) Serve(w http.ResponseWriter, r *http.Request, timeout int) {
+func (stream *M3UStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
 
-	vars := mux.Vars(r)
-
-	switch vars["path"] {
-	case "master.m3u8":
-		uri, err := readM3U8Url(r, stream)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		resp, err := executeRequest("GET", uri.String(), stream.transport, stream.headers, timeout)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		defer resp.Body.Close()
-
-		if stream.disableRemap {
-			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-			io.Copy(w, resp.Body)
-			return
-		}
-
-		remapM3U8Playlist(resp, w)
-
-	case "media.ts":
-		uri, err := readM3U8Url(r, stream)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		resp, err := executeRequest("GET", uri.String(), stream.transport, stream.headers, timeout)
-		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		defer resp.Body.Close()
-
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-		io.Copy(w, resp.Body)
-		return
-
-	default:
+	uri, err := readM3U8Url(r, stream)
+	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+
+	resp, err := executeRequest("GET", uri.String(), stream.client, stream.headers)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	if stream.disableRemap {
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	remapM3U8Playlist(resp, w)
+}
+
+func (stream *M3UStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
+
+	uri, err := readM3U8Url(r, stream)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	resp, err := executeRequest("GET", uri.String(), stream.client, stream.headers)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	io.Copy(w, resp.Body)
+	return
+
 }
 
 func (stream *M3UStreamSource) MasterPlaylist() string {

@@ -2,8 +2,8 @@ package m3uprovider
 
 import (
 	"errors"
-	"log"
 
+	"github.com/a13labs/m3uproxy/pkg/logger"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider/file"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider/iptvorg"
@@ -49,7 +49,6 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 			return nil, errors.New("provider not available '" + providerName + "'")
 		}
 
-		log.Printf("Provider: %s\n", providerName)
 		playlist := provider.GetPlaylist()
 		ignoreTags := config.Providers[providerName].IgnoreTags
 		for _, entry := range playlist.Entries {
@@ -61,7 +60,7 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 			}
 
 			if skip {
-				log.Printf("Channel '%s' is ignored, skipping.", entry.Title)
+				logger.Infof("Channel '%s' is ignored, skipping.", entry.Title)
 				continue
 			}
 
@@ -72,7 +71,7 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 
 			override, ok := config.Overrides[tvgId]
 			if ok && override.Disabled {
-				log.Printf("Channel '%s' is disabled, skipping.", entry.Title)
+				logger.Infof("Channel '%s' is disabled, skipping.", entry.Title)
 				continue
 			}
 			if ok && override.ChannelName != "" {
@@ -112,7 +111,7 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 	}
 
 	if len(config.ChannelOrder) > 0 {
-		log.Println("Ordering playlist by provided channel order.")
+		logger.Info("Ordering playlist by provided channel order.")
 
 		for needle, channel := range config.ChannelOrder {
 			for pos := needle; pos < len(masterPlaylist.Entries); pos++ {
@@ -128,14 +127,4 @@ func Load(config *PlaylistConfig) (*m3uparser.M3UPlaylist, error) {
 	}
 
 	return &masterPlaylist, nil
-}
-
-func LoadFromFile(path string) (*m3uparser.M3UPlaylist, error) {
-
-	config, err := LoadPlaylistConfig(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return Load(config)
 }

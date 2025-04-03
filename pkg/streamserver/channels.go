@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/m3uproxy/pkg/logger"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
 	"github.com/a13labs/m3uproxy/pkg/streamserver/streamSources"
@@ -24,7 +25,7 @@ type streamEntry struct {
 	sources streamSources.Sources
 }
 
-type PlaylistHandler struct {
+type ChannelsHandler struct {
 	config         *ServerConfig
 	m3uCache       *m3uparser.M3UPlaylist
 	playlistConfig *m3uprovider.PlaylistConfig
@@ -32,22 +33,23 @@ type PlaylistHandler struct {
 	channels       map[string]*streamEntry
 }
 
-func NewPlaylistHandler(config *ServerConfig) *PlaylistHandler {
-	return &PlaylistHandler{
+func NewChannelsHandler(config *ServerConfig) *ChannelsHandler {
+	return &ChannelsHandler{
 		config:      config,
 		channels:    make(map[string]*streamEntry),
 		channelsMux: sync.Mutex{},
 	}
 }
 
-func (p *PlaylistHandler) RegisterRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/streams.m3u", basicAuth(p.playlistRequest))
+func (p *ChannelsHandler) RegisterRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/channels.m3u", basicAuth(p.playlistRequest))
 	r.HandleFunc("/drm/licensing", basicAuth(licenseKeysRequest))
-	r.HandleFunc("/{token}/{channelId}/{path:.*}", p.streamRequest)
+	r.HandleFunc("/{token}/{channelId}/media/{path:.*}", p.mediaRequest)
+	r.HandleFunc("/{token}/{channelId}/{path:.*}", p.manifestRequest)
 	return r
 }
 
-func (p *PlaylistHandler) loadFromSource() error {
+func (p *ChannelsHandler) loadConfig() error {
 	var err error
 	p.playlistConfig, err = m3uprovider.LoadPlaylistConfig(p.config.data.Playlist)
 	if err != nil {
@@ -84,7 +86,7 @@ func (p *PlaylistHandler) loadFromSource() error {
 							if licenseManger == nil {
 								licenseManger = newStreamLicenseManager()
 							}
-							log.Printf("Found license, adding license key with id %s\n", keyId)
+							logger.Infof("Found license, adding license key with id %s", keyId)
 							licenseManger.addLicense("clearkey", keyId, keyValue)
 							keyType, keyId, keyValue = "", "", ""
 							break
@@ -95,11 +97,11 @@ func (p *PlaylistHandler) loadFromSource() error {
 		}
 	}
 
-	log.Printf("Loaded %d streams from %s\n", p.m3uCache.StreamCount(), p.config.data.Playlist)
+	logger.Infof("Loaded %d streams from %s", p.m3uCache.StreamCount(), p.config.data.Playlist)
 	return nil
 }
 
-func (p *PlaylistHandler) playlistRequest(w http.ResponseWriter, r *http.Request) {
+func (p *ChannelsHandler) playlistRequest(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -124,7 +126,6 @@ func (p *PlaylistHandler) playlistRequest(w http.ResponseWriter, r *http.Request
 
 	active_channels := p.getActiveChannels()
 	if len(active_channels) == 0 {
-		w.Write([]byte("#EXT-X-ENDLIST\n"))
 		return
 	}
 
@@ -134,7 +135,8 @@ func (p *PlaylistHandler) playlistRequest(w http.ResponseWriter, r *http.Request
 			continue
 		}
 
-		uri := fmt.Sprintf("%s://%s/%s/%s/%s", scheme, r.Host, token, channel.tvgId, channel.sources.MasterPlaylist())
+		tvgId := strings.ReplaceAll(channel.tvgId, " ", "%20")
+		uri := fmt.Sprintf("%s://%s/%s/%s/%s", scheme, r.Host, token, tvgId, channel.sources.MasterPlaylist())
 
 		entry := m3uparser.M3UEntry{
 			URI:   uri,
@@ -150,7 +152,7 @@ func (p *PlaylistHandler) playlistRequest(w http.ResponseWriter, r *http.Request
 	}
 }
 
-func (p *PlaylistHandler) getActiveChannels() []*streamEntry {
+func (p *ChannelsHandler) getActiveChannels() []*streamEntry {
 	// get a list of all active streams
 	p.channelsMux.Lock()
 	active_channels := make([]*streamEntry, 0)
@@ -171,9 +173,9 @@ func (p *PlaylistHandler) getActiveChannels() []*streamEntry {
 	return active_channels
 }
 
-func (p *PlaylistHandler) Load(ctx context.Context) error {
+func (p *ChannelsHandler) Load(ctx context.Context) error {
 
-	if err := p.loadFromSource(); err != nil {
+	if err := p.loadConfig(); err != nil {
 		return err
 	}
 
@@ -183,7 +185,7 @@ func (p *PlaylistHandler) Load(ctx context.Context) error {
 
 	for i := 0; i < p.config.data.NumWorkers; i++ {
 		wg.Add(1)
-		go p.monitorWorker(streamsChan, stopWorkers, &wg)
+		go monitorWorker(streamsChan, stopWorkers, &wg)
 	}
 
 	go func() {
@@ -205,7 +207,7 @@ func (p *PlaylistHandler) Load(ctx context.Context) error {
 
 				radio := entry.ExtInfTags.GetValue("radio")
 				if tvgId == "" && radio == "" {
-					log.Printf("No tvg-id or radio tag found for %s, skipping\n", entry.URI)
+					logger.Warnf("No tvg-id or radio tag found for %s, skipping", entry.URI)
 					continue
 				}
 
@@ -222,12 +224,20 @@ func (p *PlaylistHandler) Load(ctx context.Context) error {
 				}
 
 				if channel.sources.SourceExists(entry) {
-					log.Printf("Stream source already exists: %s\n", entry.URI)
+					logger.Warnf("Stream source already exists: %s", entry.URI)
 					continue
 				}
 
-				log.Printf("Adding stream source for %s, for channel %s\n", entry.URI, tvgId)
-				channel.sources.AddSource(entry, p.config.data.Timeout)
+				logger.Infof("Adding stream source for %s, for channel %s", entry.URI, tvgId)
+				added, err := channel.sources.AddSource(entry, p.config.data.Timeout)
+				if err != nil {
+					logger.Errorf("Error adding stream source for %s: %v", entry.URI, err)
+					continue
+				}
+				if !added {
+					logger.Warnf("Stream source already exists: %s", entry.URI)
+					continue
+				}
 				streamsChan <- channel
 			}
 		}
@@ -239,7 +249,7 @@ func (p *PlaylistHandler) Load(ctx context.Context) error {
 	return nil
 }
 
-func (p *PlaylistHandler) streamRequest(w http.ResponseWriter, r *http.Request) {
+func (p *ChannelsHandler) manifestRequest(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -252,7 +262,7 @@ func (p *PlaylistHandler) streamRequest(w http.ResponseWriter, r *http.Request) 
 	ok := auth.VerifyToken(token)
 	if !ok {
 		http.Error(w, "Forbidden", http.StatusUnauthorized)
-		log.Printf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.\n", r.URL.Path)
+		logger.Errorf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.", r.URL.Path)
 		return
 	}
 
@@ -276,10 +286,50 @@ func (p *PlaylistHandler) streamRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	channel.sources.Serve(w, r, p.config.data.Timeout)
+	channel.sources.ServeManifest(w, r, p.config.data.Timeout)
 }
 
-func (p *PlaylistHandler) monitorWorker(streams <-chan *streamEntry, stop <-chan bool, wg *sync.WaitGroup) {
+func (p *ChannelsHandler) mediaRequest(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	vars := mux.Vars(r)
+	token := vars["token"]
+
+	ok := auth.VerifyToken(token)
+	if !ok {
+		http.Error(w, "Forbidden", http.StatusUnauthorized)
+		logger.Errorf("Unauthorized access to stream stream %s: Token expired, missing, or invalid.", r.URL.Path)
+		return
+	}
+
+	channelId, ok := vars["channelId"]
+	if !ok {
+		http.Error(w, "Invalid stream ID", http.StatusBadRequest)
+		return
+	}
+
+	p.channelsMux.Lock()
+	defer p.channelsMux.Unlock()
+
+	channel, ok := p.channels[channelId]
+	if !ok {
+		http.Error(w, "Stream not found", http.StatusNotFound)
+		return
+	}
+
+	if !channel.sources.Active() {
+		http.Error(w, "Stream not active", http.StatusNotFound)
+		return
+	}
+
+	channel.sources.ServeMedia(w, r, p.config.data.Timeout)
+}
+
+func monitorWorker(streams <-chan *streamEntry, stop <-chan bool, wg *sync.WaitGroup) {
 
 	defer wg.Done()
 	for stream := range streams {
@@ -287,12 +337,12 @@ func (p *PlaylistHandler) monitorWorker(streams <-chan *streamEntry, stop <-chan
 		case <-stop:
 			return
 		default:
-			stream.sources.HealthCheck(p.config.data.Timeout)
+			stream.sources.HealthCheck()
 			if stream.sources.GetActiveSource() == nil {
 				continue
 			}
 			if !stream.sources.Active() {
-				log.Printf("Stream %s is not active\n", stream.sources.GetActiveSource().MediaName())
+				logger.Warnf("Stream %s is not active", stream.sources.GetActiveSource().MediaName())
 			}
 		}
 	}
