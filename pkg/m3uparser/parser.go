@@ -1,6 +1,7 @@
 package m3uparser
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"net/http"
@@ -59,13 +60,17 @@ var (
 	}
 )
 
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
+var M3U8DirectivesMap = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(M3U8Directives))
+	for _, directive := range M3U8Directives {
+		m[directive] = struct{}{}
 	}
-	return false
+	return m
+}()
+
+func contains(item string) bool {
+	_, exists := M3U8DirectivesMap[item]
+	return exists
 }
 
 func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
@@ -98,113 +103,72 @@ func ParseM3UFile(filePath string) (*M3UPlaylist, error) {
 	return DecodeFromReader(reader)
 }
 
-func readString(buf io.Reader) (string, error) {
-	var content string
-
-	b := make([]byte, 1)
-	for {
-		// Read line
-		_, err := buf.Read(b)
-		if err != nil {
-			if err == io.EOF {
-				return content, err
-			}
-			return "", err
-		}
-		if b[0] == '\n' {
-			break
-		}
-		content += string(b)
+func readString(buf *bufio.Reader) (string, error) {
+	line, err := buf.ReadString('\n')
+	if err != nil && err != io.EOF {
+		return "", err
 	}
-
-	return content, nil
+	return strings.TrimRight(line, "\r\n"), err
 }
 
-func assertM3UHeader(buf io.Reader) error {
-	// Read first line
+func assertM3UHeader(buf *bufio.Reader) error {
 	line, err := readString(buf)
 	if err != nil {
 		return err
 	}
-
 	if !strings.HasPrefix(line, "#EXTM3U") {
 		return errors.New("invalid M3U file")
 	}
-
 	return nil
 }
 
-func processLine(buf io.Reader) (M3UTag, string, error) {
-
-	eof := false
+func processLine(buf *bufio.Reader) (M3UTag, string, error) {
 	for {
-		// Read line
 		line, err := readString(buf)
-		eof = err == io.EOF
-		if err != nil && !eof {
+		if err != nil && line == "" {
+			if err == io.EOF {
+				return M3UTag{}, "", io.EOF
+			}
 			return M3UTag{}, "", err
 		}
 
 		line = strings.TrimSpace(line)
-		if len(line) == 0 {
-			// Ignore empty lines and comments that aren't tags
-			if eof {
-				return M3UTag{}, "", io.EOF
-			}
-			continue
-		}
-
-		if !strings.HasPrefix(line, "#") {
+		if len(line) == 0 || !strings.HasPrefix(line, "#") {
+			// Return non-tag lines as URIs
 			return M3UTag{}, line, nil
 		}
 
 		tag, err := parseTag(line)
-		if err != nil {
-			// Ignore invalid tags or comments
-			if eof {
-				return M3UTag{}, "", io.EOF
-			}
-			continue
+		if err == nil && contains(tag.Tag) {
+			return tag, "", nil
 		}
-
-		if !contains(M3U8Directives, tag.Tag) {
-			// Ignore unknown tags
-			if eof {
-				return M3UTag{}, "", io.EOF
-			}
-			continue
-		}
-
-		return tag, "", err
 	}
 }
 
-func DecodeFromReader(buf io.Reader) (*M3UPlaylist, error) {
+func DecodeFromReader(r io.Reader) (*M3UPlaylist, error) {
+	buf := bufio.NewReader(r)
 
-	// Consume header
-	err := assertM3UHeader(buf)
-	if err != nil {
+	// Validate header
+	if err := assertM3UHeader(buf); err != nil {
 		return nil, err
 	}
 
 	playlist := &M3UPlaylist{
-		Version: M3U8Version3, // Default M3U8 version
+		Version: M3U8Version3,
 		Entries: make([]M3UEntry, 0),
 		Tags:    make([]M3UTag, 0),
 		Type:    "master",
 	}
 
-	// Read all content from buf
 	var currentEntry *M3UEntry
 
 	for {
-
 		tag, line, err := processLine(buf)
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			continue
+			return nil, err
 		}
 
 		if line != "" {
@@ -218,8 +182,8 @@ func DecodeFromReader(buf io.Reader) (*M3UPlaylist, error) {
 			continue
 		}
 
-		if tag.Tag == "EXTINF" {
-			// Handle EXTINF tag
+		switch tag.Tag {
+		case "EXTINF":
 			currentEntry = &M3UEntry{
 				Tags: []M3UTag{tag},
 			}
@@ -227,7 +191,7 @@ func DecodeFromReader(buf io.Reader) (*M3UPlaylist, error) {
 			if len(parts) > 0 {
 				currentEntry.Duration = parseDuration(parts[0])
 				if currentEntry.Duration == -1 {
-					currentEntry.TVGTags = ParseTVGTags(parts[0][2:])
+					currentEntry.ExtInfTags = ExtractExtinfTags(parts[0][2:])
 				}
 			} else {
 				currentEntry.Duration = -1
@@ -235,29 +199,22 @@ func DecodeFromReader(buf io.Reader) (*M3UPlaylist, error) {
 			if len(parts) > 1 {
 				currentEntry.Title = parts[1]
 			}
-			continue
-		}
-
-		if tag.Tag == "EXT-X-STREAM-INF" {
+		case "EXT-X-STREAM-INF":
 			currentEntry = &M3UEntry{
-				Tags: []M3UTag{tag}, // Add the EXT-X-STREAM-INF tag
+				Tags: []M3UTag{tag},
 			}
-			continue
-		}
-
-		if currentEntry != nil {
-			currentEntry.Tags = append(currentEntry.Tags, tag)
-		} else {
-
-			if tag.Tag == "EXT-X-INDEPENDENT-SEGMENTS" {
-				playlist.Type = "master"
-			} else if tag.Tag == "EXT-X-MEDIA-SEQUENCE" {
-				playlist.Type = "media"
+		default:
+			if currentEntry != nil {
+				currentEntry.Tags = append(currentEntry.Tags, tag)
+			} else {
+				if tag.Tag == "EXT-X-INDEPENDENT-SEGMENTS" {
+					playlist.Type = "master"
+				} else if tag.Tag == "EXT-X-MEDIA-SEQUENCE" {
+					playlist.Type = "media"
+				}
+				playlist.Tags = append(playlist.Tags, tag)
 			}
-
-			playlist.Tags = append(playlist.Tags, tag)
 		}
-
 	}
 
 	if playlist.Version == 0 {

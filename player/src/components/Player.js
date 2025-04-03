@@ -24,7 +24,6 @@ class Player extends Component {
     }
 
     componentDidMount() {
-
         if (this.state.EMESupported) {
             console.log('EME Supported, skipping encrypted content');
             ShakaPolyfill.installAll();
@@ -57,11 +56,16 @@ class Player extends Component {
             console.log('EME Not Supported');
         }
 
-        this.playerRef = new ShakaPlayer(this.videoRef.current);
-
-        // Handle player errors
+        this.playerRef = new ShakaPlayer();
         this.playerRef.addEventListener('error', (event) => {
             console.error('Shaka Player Error:', event.detail);
+        });
+
+        // Attach the player to the video element
+        this.playerRef.attach(this.videoRef.current).then(() => {
+            console.log('Player attached to video element');
+        }).catch((err) => {
+            console.error('Error attaching player:', err);
         });
     }
 

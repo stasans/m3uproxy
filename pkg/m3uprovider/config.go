@@ -16,8 +16,9 @@ type OverrideEntry struct {
 }
 
 type ProviderConfig struct {
-	Provider string          `json:"provider"`
-	Config   json.RawMessage `json:"config"`
+	Provider   string            `json:"provider"`
+	Config     json.RawMessage   `json:"config"`
+	IgnoreTags map[string]string `json:"ignore_tags,omitempty"`
 }
 
 type PlaylistConfig struct {

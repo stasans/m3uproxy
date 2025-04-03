@@ -77,14 +77,14 @@ func (playlist *M3UPlaylist) StreamCount() int {
 	return len(playlist.Entries)
 }
 
-func (playlist *M3UPlaylist) SearchEntryByTvgTag(tag, value string) *M3UEntry {
-	return playlist.Entries.SearchByTvgTag(tag, value)
+func (playlist *M3UPlaylist) SearchEntryByExtinfTag(tag, value string) *M3UEntry {
+	return playlist.Entries.SearchByExtinfTag(tag, value)
 }
 
-func (playlist *M3UPlaylist) SearchEntryIndexByTvgTag(tag, value string) int {
-	return playlist.Entries.SearchIndexByTvgTag(tag, value)
+func (playlist *M3UPlaylist) SearchEntryIndexByExtinfTag(tag, value string) int {
+	return playlist.Entries.SearchIndexByExtinfTag(tag, value)
 }
 
-func (playlist *M3UPlaylist) RemoveEntryByTvgTag(tag, value string) {
-	playlist.Entries.RemoveByTvgTag(tag, value)
+func (playlist *M3UPlaylist) RemoveEntryByExtinfTag(tag, value string) {
+	playlist.Entries.RemoveByExtinfTag(tag, value)
 }

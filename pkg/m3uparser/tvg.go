@@ -5,9 +5,9 @@ type M3UTvgTag struct {
 	Value string
 }
 
-type M3UTvgTags []M3UTvgTag
+type M3UExtinfTags []M3UTvgTag
 
-func ParseTVGTags(data string) M3UTvgTags {
+func ExtractExtinfTags(data string) M3UExtinfTags {
 
 	inKey := true
 	var key string
@@ -44,7 +44,7 @@ func (tag *M3UTvgTag) String() string {
 	return tag.Tag + "=\"" + tag.Value + "\""
 }
 
-func (tags M3UTvgTags) GetValue(tag string) string {
+func (tags M3UExtinfTags) GetValue(tag string) string {
 	for _, t := range tags {
 		if t.Tag == tag {
 			return t.Value
@@ -53,7 +53,7 @@ func (tags M3UTvgTags) GetValue(tag string) string {
 	return ""
 }
 
-func (tags M3UTvgTags) String() string {
+func (tags M3UExtinfTags) String() string {
 	var result string
 	for _, tag := range tags {
 		result += tag.String() + " "

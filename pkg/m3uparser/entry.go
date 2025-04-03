@@ -15,11 +15,11 @@ type M3UTags []M3UTag
 
 // M3UEntry represents a single entry in the M3U file.
 type M3UEntry struct {
-	URI      string     `json:"uri"`      // The URI of the media.
-	Duration int        `json:"duration"` // The duration of the media in seconds (if available).
-	Title    string     `json:"title"`    // The title of the media (if available).
-	Tags     M3UTags    `json:"tags"`     // Additional tags associated with the entry.
-	TVGTags  M3UTvgTags `json:"tvg_tags"` // Additional tags associated with the entry.
+	URI        string        `json:"uri"`         // The URI of the media.
+	Duration   int           `json:"duration"`    // The duration of the media in seconds (if available).
+	Title      string        `json:"title"`       // The title of the media (if available).
+	Tags       M3UTags       `json:"tags"`        // Additional tags associated with the entry.
+	ExtInfTags M3UExtinfTags `json:"extinf_tags"` // Additional tags associated with the entry.
 }
 
 type M3UEntries []M3UEntry
@@ -134,27 +134,27 @@ func (entry *M3UEntry) ClearTags() {
 	entry.Tags = tags
 }
 
-func (entries M3UEntries) SearchByTvgTag(tag string, value string) *M3UEntry {
+func (entries M3UEntries) SearchByExtinfTag(tag string, value string) *M3UEntry {
 	for _, entry := range entries {
-		if entry.TVGTags.GetValue(tag) == value {
+		if entry.ExtInfTags.GetValue(tag) == value {
 			return &entry
 		}
 	}
 	return nil
 }
 
-func (entries M3UEntries) SearchIndexByTvgTag(tag string, value string) int {
+func (entries M3UEntries) SearchIndexByExtinfTag(tag string, value string) int {
 	for i, entry := range entries {
-		if entry.TVGTags.GetValue(tag) == value {
+		if entry.ExtInfTags.GetValue(tag) == value {
 			return i
 		}
 	}
 	return -1
 }
 
-func (entries M3UEntries) RemoveByTvgTag(tag string, value string) {
+func (entries M3UEntries) RemoveByExtinfTag(tag string, value string) {
 	for i, entry := range entries {
-		if entry.TVGTags.GetValue(tag) == value {
+		if entry.ExtInfTags.GetValue(tag) == value {
 			if i == len(entries)-1 {
 				entries = entries[:i]
 			} else if i == 0 {

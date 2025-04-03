@@ -12,27 +12,9 @@ import (
 	"github.com/elnormous/contenttype"
 )
 
-var supportedMediaTypes = []contenttype.MediaType{
-	contenttype.NewMediaType("application/vnd.apple.mpegurl"),
-	contenttype.NewMediaType("application/x-mpegurl"),
-	contenttype.NewMediaType("audio/x-mpegurl"),
-	contenttype.NewMediaType("audio/mpeg"),
-	contenttype.NewMediaType("audio/aacp"),
-	contenttype.NewMediaType("audio/aac"),
-	contenttype.NewMediaType("audio/mp4"),
-	contenttype.NewMediaType("audio/mp3"),
-	contenttype.NewMediaType("audio/ac3"),
-	contenttype.NewMediaType("audio/x-aac"),
-	contenttype.NewMediaType("video/mp2t"),
-	contenttype.NewMediaType("video/m2ts"),
-	contenttype.NewMediaType("video/mp4"),
-	contenttype.NewMediaType("binary/octet-stream"),
-	contenttype.NewMediaType("application/dash+xml"),
-}
-
 func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 
-	radio := entry.TVGTags.GetValue("radio")
+	radio := entry.ExtInfTags.GetValue("radio")
 
 	proxy := ""
 	m3uproxyTags := entry.SearchTags("M3UPROXYTRANSPORT")
@@ -112,15 +94,14 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) StreamSource {
 		entry.URI = resp.Request.URL.String()
 	}
 
-	ct := resp.Header.Get("Content-Type")
-	mediaType, _, err := contenttype.GetAcceptableMediaTypeFromHeader(ct, supportedMediaTypes)
-	if err != nil {
-		log.Printf("Error getting media type: %s\n", err)
+	ct, valid := contentTypeAllowed(resp)
+	if !valid {
+		log.Printf("Invalid content type: %s\n", ct)
 		return nil
 	}
 
 	switch {
-	case mediaType.Subtype == "dash+xml":
+	case ct.Subtype == "dash+xml":
 		return &MPDStreamSource{
 			BaseStreamSource: BaseStreamSource{
 				m3u:              entry,
