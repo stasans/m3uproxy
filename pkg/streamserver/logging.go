@@ -1,18 +1,19 @@
 package streamserver
 
 import (
-	"log"
 	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
-func setupLogging(out string) {
-	if out != "" {
-		file, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatalf("Failed to open log file: %v", err)
-		}
+var log = logrus.New()
+
+func setupLogging(logFile string) {
+	log.SetFormatter(&logrus.JSONFormatter{})
+	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err == nil {
 		log.SetOutput(file)
 	} else {
-		log.SetOutput(os.Stdout)
+		log.Warn("Failed to log to file, using default stderr")
 	}
 }

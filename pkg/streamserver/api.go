@@ -13,17 +13,30 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func registerAPIRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/api/v1/authenticate", basicAuth(authenticateRequest))
-	r.HandleFunc("/api/v1/reload", adminAccess(reloadRequest))
-	r.HandleFunc("/api/v1/config", adminAccess(configAPIRequest))
-	r.HandleFunc("/api/v1/playlist", adminAccess(playlistAPIRequest))
-	r.HandleFunc("/api/v1/users", adminAccess(usersAPIRequest))
-	r.HandleFunc("/api/v1/user/{id}", adminAccess(userAPIRequest))
+type APIHandler struct {
+	config      *ServerConfig
+	restartChan *chan bool
+}
+
+func NewAPIHandler(config *ServerConfig, restartChan *chan bool) *APIHandler {
+
+	return &APIHandler{
+		config:      config,
+		restartChan: restartChan,
+	}
+}
+
+func (h *APIHandler) RegisterRoutes(r *mux.Router) *mux.Router {
+	r.HandleFunc("/api/v1/authenticate", basicAuth(h.authenticateRequest))
+	r.HandleFunc("/api/v1/reload", adminAccess(h.reloadRequest))
+	r.HandleFunc("/api/v1/config", adminAccess(h.configAPIRequest))
+	r.HandleFunc("/api/v1/playlist", adminAccess(h.playlistAPIRequest))
+	r.HandleFunc("/api/v1/users", adminAccess(h.usersAPIRequest))
+	r.HandleFunc("/api/v1/user/{id}", adminAccess(h.userAPIRequest))
 	return r
 }
 
-func authenticateRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) authenticateRequest(w http.ResponseWriter, r *http.Request) {
 
 	authHeader := r.Header.Get("Authorization")
 	authParts := strings.SplitN(authHeader, " ", 2)
@@ -47,12 +60,12 @@ func authenticateRequest(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(resp))
 }
 
-func configAPIRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) configAPIRequest(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		data, err := json.Marshal(Config)
+		data, err := json.Marshal(h.config.data)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -61,13 +74,14 @@ func configAPIRequest(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(data))
 		return
 	case http.MethodPut:
-		newConfig := ServerConfig{}
+		newConfig := ConfigData{}
 		err := json.NewDecoder(r.Body).Decode(&newConfig)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		err = SaveServerConfig(newConfig)
+		h.config.Set(newConfig)
+		err = h.config.Save()
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -77,7 +91,7 @@ func configAPIRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func usersAPIRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) usersAPIRequest(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
@@ -100,7 +114,7 @@ func usersAPIRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func userAPIRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) userAPIRequest(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
@@ -181,12 +195,12 @@ func userAPIRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func playlistAPIRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) playlistAPIRequest(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
 		w.Header().Set("Content-Type", "application/json")
-		file, err := os.Open(Config.Playlist)
+		file, err := os.Open(h.config.data.Playlist)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -215,7 +229,10 @@ func playlistAPIRequest(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		err = SavePlaylist(playlist)
+		if !playlist.Validate() {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		err = playlist.SaveToFile(h.config.data.Playlist)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -227,12 +244,14 @@ func playlistAPIRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func reloadRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) reloadRequest(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodPost:
 		w.WriteHeader(http.StatusNoContent)
-		Restart()
+		if h.restartChan != nil {
+			*h.restartChan <- true
+		}
 		return
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)

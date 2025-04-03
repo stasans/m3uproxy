@@ -13,7 +13,8 @@ var serverCmd = &cobra.Command{
 	Long:  `Start the M3U proxy server that proxies M3U playlists and EPG data.`,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		streamserver.Run(rootCmd.ConfigFile)
+		s := streamserver.NewStreamServer(rootCmd.ConfigFile)
+		s.Run()
 	},
 }
 

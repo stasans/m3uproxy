@@ -24,13 +24,14 @@ var addCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		err := streamserver.LoadServerConfig(rootCmd.ConfigFile)
-		if err != nil {
-			cmd.PrintErrln(err)
+		c := streamserver.NewServerConfig(rootCmd.ConfigFile)
+
+		if c == nil {
+			cmd.PrintErrln("Error loading config")
 			os.Exit(1)
 		}
 
-		err = auth.InitializeAuth(streamserver.Config.Auth)
+		err := auth.InitializeAuth(c.Get().Auth)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)

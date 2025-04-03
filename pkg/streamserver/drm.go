@@ -2,12 +2,10 @@ package streamserver
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/gorilla/mux"
 )
 
 type streamLicense struct {
@@ -91,9 +89,4 @@ func licenseKeysRequest(w http.ResponseWriter, r *http.Request) {
 	// Return the license
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(licenses)
-}
-
-func registerLicenseRoutes(r *mux.Router) *mux.Router {
-	r.HandleFunc("/drm/licensing", basicAuth(licenseKeysRequest))
-	return r
 }
