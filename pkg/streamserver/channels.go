@@ -124,13 +124,13 @@ func (p *ChannelsHandler) playlistRequest(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("#EXTM3U\n"))
 
-	active_channels := p.getActiveChannels()
-	if len(active_channels) == 0 {
+	activeChannels := p.getActiveChannels()
+	if len(activeChannels) == 0 {
 		return
 	}
 
 	// Write the playlist
-	for _, channel := range active_channels {
+	for _, channel := range activeChannels {
 		if !channel.sources.Active() {
 			continue
 		}
@@ -155,22 +155,22 @@ func (p *ChannelsHandler) playlistRequest(w http.ResponseWriter, r *http.Request
 func (p *ChannelsHandler) getActiveChannels() []*streamEntry {
 	// get a list of all active streams
 	p.channelsMux.Lock()
-	active_channels := make([]*streamEntry, 0)
+	activeChannels := make([]*streamEntry, 0)
 	for _, channel := range p.channels {
 		if channel.sources.Active() {
-			active_channels = append(active_channels, channel)
+			activeChannels = append(activeChannels, channel)
 		}
 	}
 	p.channelsMux.Unlock()
 	// Sort channels by index
-	for i := 0; i < len(active_channels); i++ {
-		for j := i + 1; j < len(active_channels); j++ {
-			if active_channels[i].index > active_channels[j].index {
-				active_channels[i], active_channels[j] = active_channels[j], active_channels[i]
+	for i := 0; i < len(activeChannels); i++ {
+		for j := i + 1; j < len(activeChannels); j++ {
+			if activeChannels[i].index > activeChannels[j].index {
+				activeChannels[i], activeChannels[j] = activeChannels[j], activeChannels[i]
 			}
 		}
 	}
-	return active_channels
+	return activeChannels
 }
 
 func (p *ChannelsHandler) Load(ctx context.Context) error {

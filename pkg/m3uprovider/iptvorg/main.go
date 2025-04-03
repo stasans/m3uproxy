@@ -66,7 +66,7 @@ func getChannels(config IPTVOrgConfig) (map[string]cachedEntry, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch channels: %s", resp.Status)
 	}
 
 	defer resp.Body.Close()
