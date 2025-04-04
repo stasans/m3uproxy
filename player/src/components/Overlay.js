@@ -15,15 +15,6 @@ class Playlist extends Component {
         };
     }
 
-    componentDidMount() {
-    }
-
-    componentDidUpdate(prevProps, prevState) {
-    }
-
-    componentWillUnmount() {
-    }
-
     showChannelNumber = () => {
         this.setState({ channelNumberVisible: true });
     }
@@ -60,11 +51,9 @@ class Playlist extends Component {
             <div className="overlay">
                 <div ref={this.channelNameRef} className="channel-name" style={{
                     opacity: channelNameVisible ? 1 : 0,
-                    transition: channelNameVisible ? "" : "opacity 2s ease-out"
                 }} >{channelName}</div>
                 <div ref={this.channelNumberRef} className="channel-number" style={{
                     opacity: channelNumberVisible ? 1 : 0,
-                    transition: channelNumberVisible ? "" : "opacity 2s ease-out"
                 }} >{channelNumber}</div>
             </div>
         );

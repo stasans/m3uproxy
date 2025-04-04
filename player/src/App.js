@@ -126,18 +126,14 @@ function App() {
         overlayRef.current.showChannelName(true);
         overlayRef.current.showChannelNumber(true);
         playerRef.current.load(currentChannel ? currentChannel.source : '');
-        playerRef.current.play();
     }, [currentChannel]);
 
     const handleOnReady = () => {
-        Logger.info('Player is ready');
-        if (currentChannel) {
-            playerRef.current.load(currentChannel.source);
-            playerRef.current.play();
-        }
+        playerRef.current.load(currentChannel ? currentChannel.source : '');
     }
 
     const handleVideoPlay = () => {
+        console.log('Video is playing');
         if (infoTimeout) {
             clearTimeout(infoTimeout);
         }
@@ -150,7 +146,6 @@ function App() {
     const handleClose = () => setShowConfig(false);
     const handleSave = () => {
         setShowConfig(false);
-        fetchPlaylist();
     }
 
     return (
