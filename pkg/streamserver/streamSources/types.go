@@ -6,6 +6,7 @@ import (
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
+	"github.com/valyala/fasthttp"
 )
 
 type StreamSource interface {
@@ -25,11 +26,11 @@ type BaseStreamSource struct {
 	StreamSource
 	mediaType        contenttype.MediaType
 	m3u              m3uparser.M3UEntry
-	headers          http.Header
+	headers          map[string]string // Changed from http.Header to map[string]string for fasthttp compatibility
 	httpProxy        string
 	forceKodiHeaders bool
 	radio            bool
-	client           *http.Client
+	client           *fasthttp.Client // Changed from *http.Client to *fasthttp.Client
 	disableRemap     bool
 	active           bool
 	mux              *sync.Mutex

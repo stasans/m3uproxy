@@ -2,6 +2,7 @@ package streamSources
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/valyala/fasthttp"
 )
 
 func readM3U8Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
@@ -25,8 +28,8 @@ func readM3U8Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
 	return url.Parse(string(originalUrlBytes))
 }
 
-func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
-	buf := bufio.NewReader(resp.Body)
+func remapM3U8Playlist(resp *fasthttp.Response, w http.ResponseWriter, uri *url.URL) {
+	buf := bufio.NewReader(bytes.NewReader(resp.Body()))
 
 	// Validate header
 	line, err := buf.ReadString('\n')
@@ -40,7 +43,7 @@ func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
 		return
 	}
 
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Content-Type", string(resp.Header.ContentType()))
 	w.Write([]byte(line))
 	var in_entry = false
 	var playlistType = "master"
@@ -58,8 +61,8 @@ func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
 			if in_entry {
 				line = strings.TrimRight(line, "\r\n")
 				if !strings.HasPrefix(line, "http") {
-					basePath := path.Dir(resp.Request.URL.Path)
-					line = resp.Request.URL.Scheme + "://" + path.Join(resp.Request.URL.Host, path.Join(basePath, line))
+					p := path.Dir(uri.EscapedPath())
+					line = uri.Scheme + "://" + path.Join(string(uri.Host), path.Join(p, line))
 				}
 
 				remap := base64.URLEncoding.EncodeToString([]byte(line))
@@ -98,7 +101,6 @@ func remapM3U8Playlist(resp *http.Response, w http.ResponseWriter) {
 }
 
 func (stream *M3UStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
-
 	uri, err := readM3U8Url(r, stream)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -110,19 +112,18 @@ func (stream *M3UStreamSource) ServeManifest(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	defer resp.Body.Close()
+	defer fasthttp.ReleaseResponse(resp)
 
 	if stream.disableRemap {
-		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-		io.Copy(w, resp.Body)
+		w.Header().Set("Content-Type", string(resp.Header.ContentType()))
+		w.Write(resp.Body())
 		return
 	}
 
-	remapM3U8Playlist(resp, w)
+	remapM3U8Playlist(resp, w, uri)
 }
 
 func (stream *M3UStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
-
 	uri, err := readM3U8Url(r, stream)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
@@ -134,12 +135,10 @@ func (stream *M3UStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	defer resp.Body.Close()
+	defer fasthttp.ReleaseResponse(resp)
 
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-	io.Copy(w, resp.Body)
-	return
-
+	w.Header().Set("Content-Type", string(resp.Header.ContentType()))
+	w.Write(resp.Body())
 }
 
 func (stream *M3UStreamSource) MasterPlaylist() string {

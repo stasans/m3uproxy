@@ -3,17 +3,16 @@ package streamSources
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
+	"github.com/valyala/fasthttp"
 )
 
 func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) {
-
 	radio := entry.ExtInfTags.GetValue("radio")
 
 	proxy := ""
@@ -26,28 +25,16 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 				proxy = parts[1]
 			default:
 				// Handle other transport options if needed
-				// For now, we only handle the proxy option
-				// and ignore others.
 			}
 		}
 	}
 
-	transport := http.DefaultTransport.(*http.Transport)
-	if proxy != "" {
-		proxyURL, err := url.Parse(proxy)
-		if err == nil {
-			transport = &http.Transport{
-				Proxy: http.ProxyURL(proxyURL),
-			}
-		}
-	}
-
-	headers := http.Header{}
+	headers := make(map[string]string)
 	m3uproxyTags = entry.SearchTags("M3UPROXYHEADER")
 	for _, tag := range m3uproxyTags {
 		parts := strings.Split(tag.Value, "=")
 		if len(parts) == 2 {
-			headers.Set(parts[0], parts[1])
+			headers[parts[0]] = parts[1]
 		}
 	}
 
@@ -57,20 +44,16 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 		if len(parts) == 2 {
 			switch parts[0] {
 			case "http-user-agent":
-				headers.Set("User-Agent", parts[1])
+				headers["User-Agent"] = parts[1]
 			case "http-referrer":
-				headers.Set("Referer", parts[1])
+				headers["Referer"] = parts[1]
 			default:
 			}
 		}
 	}
 
-	if headers.Get("User-Agent") == "" {
-		// Default User-Agent for VLC
-		// This is a workaround for some servers that require a User-Agent header
-		// to be set. VLC uses "VLC/3.0.11 LibVLC/3.0.11" as the default User-Agent.
-		// This can be changed to any other User-Agent string if needed.
-		headers.Set("User-Agent", "VLC/3.0.11 LibVLC/3.0.11")
+	if _, ok := headers["User-Agent"]; !ok {
+		headers["User-Agent"] = "VLC/3.0.11 LibVLC/3.0.11"
 	}
 
 	m3uproxyTags = entry.SearchTags("M3UPROXYOPT")
@@ -88,20 +71,20 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 
 	// Clear non-standard tags
 	entry.ClearTags()
-	client := &http.Client{
-		Timeout:   time.Duration(timeout) * time.Second,
-		Transport: transport,
+
+	client := &fasthttp.Client{
+		ReadTimeout:  time.Duration(timeout) * time.Second,
+		WriteTimeout: time.Duration(timeout) * time.Second,
 	}
 
-	resp, err := executeRequest("GET", entry.URI, client, headers)
+	resp, uri, err := executeRequestWithRedirectTracking("GET", entry.URI, client, headers)
 	if err != nil {
 		return nil, err
 	}
+	defer fasthttp.ReleaseResponse(resp)
 
-	resp.Body.Close()
-
-	if resp.Request.URL.String() != entry.URI {
-		entry.URI = resp.Request.URL.String()
+	if uri != entry.URI {
+		entry.URI = uri
 	}
 
 	ct, valid := contentTypeAllowed(resp)
@@ -140,15 +123,15 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 }
 
 func (stream *BaseStreamSource) HealthCheck() error {
-	resp, err := executeRequest("GET", stream.m3u.URI, stream.client, stream.headers)
+	resp, uri, err := executeRequestWithRedirectTracking("GET", stream.m3u.URI, stream.client, stream.headers)
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer fasthttp.ReleaseResponse(resp)
 
 	stream.mux.Lock()
-	if resp.Request.URL.String() != stream.m3u.URI {
-		stream.m3u.URI = resp.Request.URL.String()
+	if uri != stream.m3u.URI {
+		stream.m3u.URI = uri
 	}
 	stream.mux.Unlock()
 
@@ -224,8 +207,6 @@ func (s *Sources) SourceExists(entry m3uparser.M3UEntry) bool {
 }
 
 func (s *Sources) AddSource(entry m3uparser.M3UEntry, timeout int) (bool, error) {
-
-	// Check if the source is already in the list
 	if s.SourceExists(entry) {
 		return false, fmt.Errorf("source already exists")
 	}
@@ -248,7 +229,6 @@ func (s *Sources) GetActiveSource() StreamSource {
 }
 
 func (s *Sources) HealthCheck() error {
-
 	var activeSource StreamSource = nil
 	for _, source := range s.sources {
 		_ = source.HealthCheck()

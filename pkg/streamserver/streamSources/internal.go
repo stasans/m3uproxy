@@ -1,14 +1,16 @@
 package streamSources
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"path"
+	"strings"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/elnormous/contenttype"
+	"github.com/valyala/fasthttp"
 )
 
 var supportedMediaTypes = []contenttype.MediaType{
@@ -30,43 +32,114 @@ var supportedMediaTypes = []contenttype.MediaType{
 	contenttype.NewMediaType("application/dash+xml"),
 }
 
-func contentTypeAllowed(resp *http.Response) (contenttype.MediaType, bool) {
-	ct := contenttype.NewMediaType(resp.Header.Get("Content-Type"))
+func contentTypeAllowed(resp *fasthttp.Response) (contenttype.MediaType, bool) {
+	ct := contenttype.NewMediaType(string(resp.Header.ContentType()))
 	return ct, ct.MatchesAny(supportedMediaTypes...)
 }
 
-func executeRequest(method, URI string, client *http.Client, headers http.Header) (*http.Response, error) {
+func executeRequestWithRedirectTracking(method, URI string, client *fasthttp.Client, headers map[string]string) (*fasthttp.Response, string, error) {
+	const maxRedirects = 10
+	currentURL := URI
+	var resp *fasthttp.Response
 
-	req, err := http.NewRequest(method, URI, nil)
+	for i := 0; i < maxRedirects; i++ {
+		req := fasthttp.AcquireRequest()
+		defer fasthttp.ReleaseRequest(req)
+
+		req.SetRequestURI(currentURL)
+		req.Header.SetMethod(method)
+
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+
+		resp = fasthttp.AcquireResponse()
+		err := client.Do(req, resp)
+		if err != nil {
+			fasthttp.ReleaseResponse(resp)
+			return nil, "", err
+		}
+
+		statusCode := resp.StatusCode()
+		if statusCode/100 == 3 { // Handle redirects (3xx status codes)
+			location := resp.Header.Peek("Location")
+			if location == nil {
+				fasthttp.ReleaseResponse(resp)
+				return nil, "", fmt.Errorf("redirect response missing Location header")
+			}
+
+			// Resolve the new URL relative to the current URL
+			newURL := string(location)
+			if !strings.HasPrefix(newURL, "http") {
+				baseURL, err := url.Parse(currentURL)
+				if err != nil {
+					fasthttp.ReleaseResponse(resp)
+					return nil, "", fmt.Errorf("failed to parse base URL: %w", err)
+				}
+				relativeURL, err := url.Parse(newURL)
+				if err != nil {
+					fasthttp.ReleaseResponse(resp)
+					return nil, "", fmt.Errorf("failed to parse relative URL: %w", err)
+				}
+				currentURL = baseURL.ResolveReference(relativeURL).String()
+			} else {
+				currentURL = newURL
+			}
+
+			// Release the response and continue to the next redirect
+			fasthttp.ReleaseResponse(resp)
+			continue
+		}
+
+		// If not a redirect, return the response
+		return resp, currentURL, nil
+	}
+
+	// Exceeded maximum redirects
+	if resp != nil {
+		fasthttp.ReleaseResponse(resp)
+	}
+	return nil, "", fmt.Errorf("too many redirects")
+}
+
+func executeRequest(method, URI string, client *fasthttp.Client, headers map[string]string) (*fasthttp.Response, error) {
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	req.SetRequestURI(URI)
+	req.Header.SetMethod(method)
+
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp := fasthttp.AcquireResponse()
+	err := client.Do(req, resp)
 	if err != nil {
+		fasthttp.ReleaseResponse(resp)
 		return nil, err
 	}
 
-	req.Header = headers
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
+	statusCode := resp.StatusCode()
+	if statusCode/100 != 2 {
+		fasthttp.ReleaseResponse(resp)
+		return nil, fmt.Errorf("http response code (%d)", statusCode)
 	}
 
-	code := resp.StatusCode / 100
-	if code != 2 {
-		return nil, fmt.Errorf("http response code (%d)", resp.StatusCode)
-	}
-
-	if resp.StatusCode == http.StatusNoContent {
+	if statusCode == fasthttp.StatusNoContent {
+		fasthttp.ReleaseResponse(resp)
 		return nil, errors.New("no content")
 	}
 
 	return resp, nil
 }
 
-func verifyStream(mediaURI string, client *http.Client, headers http.Header) (contenttype.MediaType, error) {
-
+func verifyStream(mediaURI string, client *fasthttp.Client, headers map[string]string) (contenttype.MediaType, error) {
 	resp, err := executeRequest("GET", mediaURI, client, headers)
 	if err != nil {
 		return contenttype.MediaType{}, err
 	}
+	defer fasthttp.ReleaseResponse(resp)
 
 	ct, valid := contentTypeAllowed(resp)
 	if !valid {
@@ -74,7 +147,7 @@ func verifyStream(mediaURI string, client *http.Client, headers http.Header) (co
 	}
 
 	if ct.Subtype == "vnd.apple.mpegurl" || ct.Subtype == "x-mpegurl" {
-		m3uPlaylist, err := m3uparser.DecodeFromReader(resp.Body)
+		m3uPlaylist, err := m3uparser.DecodeFromReader(bytes.NewReader(resp.Body()))
 		if err != nil {
 			return contenttype.MediaType{}, err
 		}
@@ -86,9 +159,9 @@ func verifyStream(mediaURI string, client *http.Client, headers http.Header) (co
 		uri, _ := url.Parse(m3uPlaylist.Entries[0].URI)
 
 		if uri.Scheme == "" {
-			uri.Scheme = resp.Request.URL.Scheme
-			uri.Host = resp.Request.URL.Host
-			basePath := path.Dir(resp.Request.URL.Path)
+			uri.Scheme = "http" // Default to HTTP
+			uri.Host = string(resp.Header.Peek("Host"))
+			basePath := path.Dir(mediaURI)
 			uri.Path = path.Join(basePath, uri.Path)
 		}
 

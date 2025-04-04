@@ -1,9 +1,9 @@
 package streamSources
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -11,6 +11,7 @@ import (
 
 	mpd "github.com/a13labs/m3uproxy/pkg/mpdparser"
 	"github.com/gorilla/mux"
+	"github.com/valyala/fasthttp"
 )
 
 func readMPDUrl(r *http.Request) (*url.URL, error) {
@@ -35,8 +36,8 @@ func readMPDUrl(r *http.Request) (*url.URL, error) {
 	return uri, nil
 }
 
-func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
-	mpdPlaylist, err := mpd.DecodeFromReader(resp.Body)
+func remapMPDPlaylist(resp *fasthttp.Response, uri *url.URL) (*mpd.MPD, error) {
+	mpdPlaylist, err := mpd.DecodeFromReader(bytes.NewReader(resp.Body()))
 	if err != nil {
 		return nil, err
 	}
@@ -47,9 +48,9 @@ func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
 
 				if len(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL) == 0 {
 					uri := new(url.URL)
-					uri.Scheme = resp.Request.URL.Scheme
-					uri.Host = resp.Request.URL.Host
-					basePath := path.Dir(resp.Request.URL.Path)
+					uri.Scheme = uri.Scheme
+					uri.Host = string(uri.Host)
+					basePath := path.Dir(string(uri.EscapedPath()))
 					uri.Path = path.Join(basePath, uri.Path)
 					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
 					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("media/%s/", remap)})
@@ -62,9 +63,9 @@ func remapMPDPlaylist(resp *http.Response) (*mpd.MPD, error) {
 					uri, _ := url.Parse(currentBaseURL)
 
 					if uri.Scheme == "" {
-						uri.Scheme = resp.Request.URL.Scheme
-						uri.Host = resp.Request.URL.Host
-						basePath := path.Dir(resp.Request.URL.Path)
+						uri.Scheme = uri.Scheme
+						uri.Host = string(uri.Host)
+						basePath := path.Dir(string(uri.EscapedPath()))
 						uri.Path = path.Join(basePath, uri.Path)
 					}
 
@@ -87,7 +88,7 @@ func (stream *MPDStreamSource) ServeManifest(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	defer resp.Body.Close()
+	defer fasthttp.ReleaseResponse(resp)
 
 	ct, valid := contentTypeAllowed(resp)
 	if !valid {
@@ -95,7 +96,7 @@ func (stream *MPDStreamSource) ServeManifest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	mpdPlaylist, err := remapMPDPlaylist(resp)
+	mpdPlaylist, err := remapMPDPlaylist(resp, uri)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -118,7 +119,7 @@ func (stream *MPDStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	defer resp.Body.Close()
+	defer fasthttp.ReleaseResponse(resp)
 
 	ct, valid := contentTypeAllowed(resp)
 	if !valid {
@@ -127,7 +128,7 @@ func (stream *MPDStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", ct.String())
-	io.Copy(w, resp.Body)
+	w.Write(resp.Body())
 }
 
 func (stream *MPDStreamSource) MasterPlaylist() string {
