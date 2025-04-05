@@ -45,7 +45,7 @@ func (s *MPDStreamSource) parseUrl(r *http.Request) (*url.URL, error) {
 	return uri, nil
 }
 
-func (s *MPDStreamSource) remap(body []byte, w http.ResponseWriter, uri *url.URL) {
+func (s *MPDStreamSource) remap(body []byte, w http.ResponseWriter, orig *url.URL) {
 	mpdPlaylist, err := mpd.DecodeFromReader(bytes.NewReader(body))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -58,9 +58,9 @@ func (s *MPDStreamSource) remap(body []byte, w http.ResponseWriter, uri *url.URL
 
 				if len(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL) == 0 {
 					uri := new(url.URL)
-					uri.Scheme = uri.Scheme
-					uri.Host = string(uri.Host)
-					basePath := path.Dir(string(uri.EscapedPath()))
+					uri.Scheme = orig.Scheme
+					uri.Host = string(orig.Host)
+					basePath := path.Dir(string(orig.Path))
 					uri.Path = path.Join(basePath, uri.Path)
 					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
 					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("media/%s/", remap)})
@@ -73,9 +73,9 @@ func (s *MPDStreamSource) remap(body []byte, w http.ResponseWriter, uri *url.URL
 					uri, _ := url.Parse(currentBaseURL)
 
 					if uri.Scheme == "" {
-						uri.Scheme = uri.Scheme
-						uri.Host = string(uri.Host)
-						basePath := path.Dir(string(uri.EscapedPath()))
+						uri.Scheme = orig.Scheme
+						uri.Host = string(orig.Host)
+						basePath := path.Dir(string(orig.Path))
 						uri.Path = path.Join(basePath, uri.Path)
 					}
 
