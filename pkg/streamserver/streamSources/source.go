@@ -1,15 +1,18 @@
 package streamSources
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/upstream"
 	"github.com/elnormous/contenttype"
-	"github.com/valyala/fasthttp"
 )
 
 func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) {
@@ -72,23 +75,18 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 	// Clear non-standard tags
 	entry.ClearTags()
 
-	client := &fasthttp.Client{
-		ReadTimeout:  time.Duration(timeout) * time.Second,
-		WriteTimeout: time.Duration(timeout) * time.Second,
-	}
+	conn := upstream.NewUpstreamConnection(headers, timeout)
 
-	resp, uri, err := executeRequestWithRedirectTracking("GET", entry.URI, client, headers)
+	uri, ct, err := conn.Check("GET", entry.URI)
 	if err != nil {
 		return nil, err
 	}
-	defer fasthttp.ReleaseResponse(resp)
 
 	if uri != entry.URI {
 		entry.URI = uri
 	}
 
-	ct, valid := contentTypeAllowed(resp)
-	if !valid {
+	if !ct.MatchesAny(supportedMediaTypes...) {
 		return nil, fmt.Errorf("invalid content type: %s", ct)
 	}
 
@@ -101,7 +99,7 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 				httpProxy:        proxy,
 				forceKodiHeaders: forceKodiHeaders,
 				radio:            radio != "",
-				client:           client,
+				conn:             conn,
 				disableRemap:     disableRemap,
 				mux:              &sync.Mutex{},
 			},
@@ -114,7 +112,7 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 				httpProxy:        proxy,
 				forceKodiHeaders: forceKodiHeaders,
 				radio:            radio != "",
-				client:           client,
+				conn:             conn,
 				disableRemap:     disableRemap,
 				mux:              &sync.Mutex{},
 			},
@@ -122,62 +120,96 @@ func sourceFactory(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) 
 	}
 }
 
-func (stream *BaseStreamSource) HealthCheck() error {
-	resp, uri, err := executeRequestWithRedirectTracking("GET", stream.m3u.URI, stream.client, stream.headers)
+func (s *BaseStreamSource) HealthCheck() error {
+	uri, _, err := s.conn.Check("GET", s.m3u.URI)
 	if err != nil {
 		return err
 	}
-	defer fasthttp.ReleaseResponse(resp)
 
-	stream.mux.Lock()
-	if uri != stream.m3u.URI {
-		stream.m3u.URI = uri
+	s.mux.Lock()
+	if uri != s.m3u.URI {
+		s.m3u.URI = uri
 	}
-	stream.mux.Unlock()
+	s.mux.Unlock()
 
-	_, err = verifyStream(stream.m3u.URI, stream.client, stream.headers)
+	_, err = s.verify(s.m3u.URI)
 
-	stream.mux.Lock()
-	stream.active = err == nil
-	stream.mux.Unlock()
+	s.mux.Lock()
+	s.active = err == nil
+	s.mux.Unlock()
 
 	return err
 }
 
-func (stream *BaseStreamSource) Active() bool {
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-	return stream.active
+func (s *BaseStreamSource) Active() bool {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.active
 }
 
-func (stream *BaseStreamSource) MediaType() contenttype.MediaType {
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-	return stream.mediaType
+func (s *BaseStreamSource) MediaType() contenttype.MediaType {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.mediaType
 }
 
-func (stream *BaseStreamSource) MediaName() string {
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-	return stream.m3u.Title
+func (s *BaseStreamSource) MediaName() string {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.m3u.Title
 }
 
-func (stream *BaseStreamSource) M3UTags() m3uparser.M3UTags {
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-	return stream.m3u.Tags
+func (s *BaseStreamSource) M3UTags() m3uparser.M3UTags {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.m3u.Tags
 }
 
-func (stream *BaseStreamSource) IsRadio() bool {
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-	return stream.radio
+func (s *BaseStreamSource) IsRadio() bool {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.radio
 }
 
-func (stream *BaseStreamSource) Url() string {
-	stream.mux.Lock()
-	defer stream.mux.Unlock()
-	return stream.m3u.URI
+func (s *BaseStreamSource) Url() string {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	return s.m3u.URI
+}
+
+func (s *BaseStreamSource) verify(mediaURI string) (contenttype.MediaType, error) {
+	body, _, ct, err := s.conn.Get("GET", mediaURI)
+	if err != nil {
+		return contenttype.MediaType{}, err
+	}
+
+	if !ct.MatchesAny(supportedMediaTypes...) {
+		return contenttype.MediaType{}, errors.New("invalid content type")
+	}
+
+	if ct.Subtype == "vnd.apple.mpegurl" || ct.Subtype == "x-mpegurl" {
+		m3uPlaylist, err := m3uparser.DecodeFromReader(bytes.NewReader(body))
+		if err != nil {
+			return contenttype.MediaType{}, err
+		}
+
+		if len(m3uPlaylist.Entries) == 0 {
+			return contenttype.MediaType{}, errors.New("empty playlist")
+		}
+
+		uri, _ := url.Parse(m3uPlaylist.Entries[0].URI)
+
+		if uri.Scheme == "" {
+			uri.Scheme = "http" // Default to HTTP
+			uri.Host = string(resp.Header.Peek("Host"))
+			basePath := path.Dir(mediaURI)
+			uri.Path = path.Join(basePath, uri.Path)
+		}
+
+		return s.verify(uri.String())
+	}
+
+	return ct, nil
 }
 
 func CreateSources() Sources {
