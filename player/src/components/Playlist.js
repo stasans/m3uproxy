@@ -29,12 +29,6 @@ class Playlist extends Component {
         this.setupScrolling();
     }
 
-    componentDidUpdate(prevProps, prevState) {
-        if (prevState.playlistItems !== this.state.playlistItems) {
-            this.loadImages();
-        }
-    }
-
     componentWillUnmount() {
         this.cleanupScrolling();
     }
@@ -88,34 +82,6 @@ class Playlist extends Component {
                 Logger.error('Error fetching playlist:' + error);
                 this.setState({ playlistItems: [] });
             });
-    };
-
-    loadImages = async () => {
-        const { playlistItems } = this.state;
-        for (const item of playlistItems) {
-            if (item.logo) {
-                try {
-                    const img = await this.loadImage(item.logo);
-                    this.setState(prevState => ({
-                        images: {
-                            ...prevState.images,
-                            [item.logo]: img.src,
-                        },
-                    }));
-                } catch (error) {
-                    console.log('Failed to load image', error);
-                }
-            }
-        }
-    };
-
-    loadImage = (url) => {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = () => reject(new Error(`Failed to load image from URL: ${url}`));
-            img.src = url;
-        });
     };
 
     channelDown = () => {

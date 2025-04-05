@@ -73,27 +73,10 @@ class Player extends Component {
 
         // Attach the player to the video element
         this.player.attach(this.video.current).then(() => {
-            const { source, onLoad, onPlay, onReady } = this.props;
+            const { onReady } = this.props;
             console.log('Player attached to video element');
             if (onReady) {
                 onReady();
-            }
-            if (source) {
-                this.player.load(source).then(() => {
-                    console.log('Video loaded successfully');
-                    if (onLoad) {
-                        onLoad();
-                    }
-                    this.video.current.play().then(() => {
-                        if (onPlay) {
-                            onPlay();
-                        }
-                    }).catch((err) => {
-                        this.handlePlayerError(err);
-                    });
-                }).catch((err) => {
-                    this.handlePlayerError(err);
-                });
             }
         }).catch((err) => {
             console.error('Error attaching player:', err);
@@ -132,36 +115,32 @@ class Player extends Component {
         }
     };
 
-    handleVideoClick = () => {
-        if (this.video.current.paused) {
-            this.video.current.play();
-        } else {
-            this.video.current.pause();
-        }
-    };
-
     load = (source) => {
-        const { onLoad } = this.props;
+        const { onLoad, onPlay } = this.props;
+
+        if (source === undefined || source === null) {
+            return;
+        }
+        if (typeof source !== 'string') {
+            return;
+        }
+        if (source.length === 0) {
+            return;
+        }
 
         if (this.player) {
             this.player.load(source).then(() => {
+                console.log('Video loaded:', source);
                 if (onLoad) {
                     onLoad();
                 }
-            }).catch((err) => {
-                this.handlePlayerError(err);
-            });
-        }
-    }
-
-    play = () => {
-        const { onPlay } = this.props;
-
-        if (this.video.current) {
-            this.video.current.play().then(() => {
-                if (onPlay) {
-                    onPlay();
-                }
+                this.video.current.play().then(() => {
+                    if (onPlay) {
+                        onPlay();
+                    }
+                }).catch((err) => {
+                    this.handlePlayerError(err);
+                });
             }).catch((err) => {
                 this.handlePlayerError(err);
             });
@@ -173,9 +152,7 @@ class Player extends Component {
             <div ref={this.videoContainerRef} className="player-container">
                 <video
                     ref={this.video}
-                    autoPlay
                     className="player"
-                    onClick={this.handleVideoClick}
                 />
             </div>
         );
