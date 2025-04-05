@@ -1,4 +1,4 @@
-package streamSources
+package types
 
 import (
 	"bytes"
@@ -13,8 +13,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func readMPDUrl(r *http.Request) (*url.URL, error) {
+type MPDStreamSource struct {
+	BaseStreamSource
+}
+
+func (s *MPDStreamSource) parseUrl(r *http.Request) (*url.URL, error) {
+
 	vars := mux.Vars(r)
+
+	if vars["path"] == "master.mpd" {
+		return url.Parse(s.m3u.URI)
+	}
+
 	parts := strings.Split(vars["path"], "/")
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("invalid path")
@@ -35,7 +45,7 @@ func readMPDUrl(r *http.Request) (*url.URL, error) {
 	return uri, nil
 }
 
-func remapMPDPlaylist(body []byte, w http.ResponseWriter, uri *url.URL) {
+func (s *MPDStreamSource) remap(body []byte, w http.ResponseWriter, uri *url.URL) {
 	mpdPlaylist, err := mpd.DecodeFromReader(bytes.NewReader(body))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -79,10 +89,17 @@ func remapMPDPlaylist(body []byte, w http.ResponseWriter, uri *url.URL) {
 	mpdPlaylist.WriteTo(w)
 }
 
+func (s *MPDStreamSource) MasterPlaylist() string {
+	return "master.mpd"
+}
+
 func (s *MPDStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
 
-	// if the cache is empty, we must be serving the master playlist
-	uri, _ := url.Parse(s.m3u.URI)
+	uri, err := s.parseUrl(r)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 
 	body, _, ct, err := s.conn.Get("GET", uri.String())
 	if err != nil {
@@ -97,12 +114,12 @@ func (s *MPDStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, 
 	}
 
 	w.Header().Set("Content-Type", ct.String())
-	remapMPDPlaylist(body, w, uri)
+	s.remap(body, w, uri)
 }
 
 func (s *MPDStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
 
-	uri, err := readMPDUrl(r)
+	uri, err := s.parseUrl(r)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -116,8 +133,4 @@ func (s *MPDStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, tim
 
 	w.Header().Set("Content-Type", ct.String())
 	w.Write(body)
-}
-
-func (s *MPDStreamSource) MasterPlaylist() string {
-	return "master.mpd"
 }

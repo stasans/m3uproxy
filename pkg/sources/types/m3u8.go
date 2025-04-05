@@ -1,4 +1,4 @@
-package streamSources
+package types
 
 import (
 	"bufio"
@@ -12,10 +12,14 @@ import (
 	"strings"
 )
 
-func readM3U8Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
+type M3U8StreamSource struct {
+	BaseStreamSource
+}
+
+func (s *M3U8StreamSource) parseUrl(r *http.Request) (*url.URL, error) {
 	orig := r.URL.Query().Get("o")
 	if orig == "" {
-		return url.Parse(stream.m3u.URI)
+		return url.Parse(s.m3u.URI)
 	}
 
 	originalUrlBytes, err := base64.URLEncoding.DecodeString(orig)
@@ -26,7 +30,7 @@ func readM3U8Url(r *http.Request, stream *M3UStreamSource) (*url.URL, error) {
 	return url.Parse(string(originalUrlBytes))
 }
 
-func remapM3U8Playlist(body []byte, w http.ResponseWriter, uri *url.URL) {
+func (s *M3U8StreamSource) remap(body []byte, w http.ResponseWriter, uri *url.URL) {
 	buf := bufio.NewReader(bytes.NewReader(body))
 
 	// Validate header
@@ -97,8 +101,13 @@ func remapM3U8Playlist(body []byte, w http.ResponseWriter, uri *url.URL) {
 	}
 }
 
-func (s *M3UStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
-	uri, err := readM3U8Url(r, s)
+func (s *M3U8StreamSource) MasterPlaylist() string {
+	return "master.m3u8"
+}
+
+func (s *M3U8StreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
+
+	uri, err := s.parseUrl(r)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -116,11 +125,13 @@ func (s *M3UStreamSource) ServeManifest(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	remapM3U8Playlist(body, w, uri)
+	w.Header().Set("Content-Type", ct.String())
+	s.remap(body, w, uri)
 }
 
-func (s *M3UStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
-	uri, err := readM3U8Url(r, s)
+func (s *M3U8StreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
+
+	uri, err := s.parseUrl(r)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -134,8 +145,4 @@ func (s *M3UStreamSource) ServeMedia(w http.ResponseWriter, r *http.Request, tim
 
 	w.Header().Set("Content-Type", ct.String())
 	w.Write(body)
-}
-
-func (s *M3UStreamSource) MasterPlaylist() string {
-	return "master.m3u8"
 }

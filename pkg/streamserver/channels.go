@@ -11,7 +11,7 @@ import (
 	"github.com/a13labs/m3uproxy/pkg/logger"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
 	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
-	"github.com/a13labs/m3uproxy/pkg/streamserver/streamSources"
+	"github.com/a13labs/m3uproxy/pkg/sources"
 	"github.com/gorilla/mux"
 )
 
@@ -22,7 +22,7 @@ var (
 type streamEntry struct {
 	index   int
 	tvgId   string
-	sources streamSources.Sources
+	sources sources.Sources
 }
 
 type ChannelsHandler struct {
@@ -101,57 +101,6 @@ func (p *ChannelsHandler) loadConfig() error {
 	return nil
 }
 
-func (p *ChannelsHandler) playlistRequest(w http.ResponseWriter, r *http.Request) {
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	authHeader := r.Header.Get("Authorization")
-	authParts := strings.SplitN(authHeader, " ", 2)
-	token := authParts[1]
-
-	scheme := r.Header.Get("X-Forwarded-Proto")
-	if scheme == "" {
-		scheme = r.URL.Scheme
-	}
-	if scheme == "" {
-		scheme = "http"
-	}
-
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("#EXTM3U\n"))
-
-	activeChannels := p.getActiveChannels()
-	if len(activeChannels) == 0 {
-		return
-	}
-
-	// Write the playlist
-	for _, channel := range activeChannels {
-		if !channel.sources.Active() {
-			continue
-		}
-
-		tvgId := strings.ReplaceAll(channel.tvgId, " ", "%20")
-		uri := fmt.Sprintf("%s://%s/%s/%s/%s", scheme, r.Host, token, tvgId, channel.sources.MasterPlaylist())
-
-		entry := m3uparser.M3UEntry{
-			URI:   uri,
-			Title: channel.sources.MediaName(),
-			Tags:  make([]m3uparser.M3UTag, 0),
-		}
-		entry.Tags = append(entry.Tags, channel.sources.M3UTags()...)
-		if !channel.sources.IsRadio() {
-			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
-			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
-		}
-		w.Write([]byte(entry.String() + "\n"))
-	}
-}
-
 func (p *ChannelsHandler) getActiveChannels() []*streamEntry {
 	// get a list of all active streams
 	p.channelsMux.Lock()
@@ -217,7 +166,7 @@ func (p *ChannelsHandler) Load(ctx context.Context) error {
 					p.channels[tvgId] = &streamEntry{
 						index:   i,
 						tvgId:   tvgId,
-						sources: streamSources.CreateSources(),
+						sources: sources.NewSources(),
 					}
 					channel = p.channels[tvgId]
 					p.channelsMux.Unlock()
@@ -247,6 +196,57 @@ func (p *ChannelsHandler) Load(ctx context.Context) error {
 	wg.Wait()
 
 	return nil
+}
+
+func (p *ChannelsHandler) playlistRequest(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	authHeader := r.Header.Get("Authorization")
+	authParts := strings.SplitN(authHeader, " ", 2)
+	token := authParts[1]
+
+	scheme := r.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		scheme = r.URL.Scheme
+	}
+	if scheme == "" {
+		scheme = "http"
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("#EXTM3U\n"))
+
+	activeChannels := p.getActiveChannels()
+	if len(activeChannels) == 0 {
+		return
+	}
+
+	// Write the playlist
+	for _, channel := range activeChannels {
+		if !channel.sources.Active() {
+			continue
+		}
+
+		tvgId := strings.ReplaceAll(channel.tvgId, " ", "%20")
+		uri := fmt.Sprintf("%s://%s/%s/%s/%s", scheme, r.Host, token, tvgId, channel.sources.MasterPlaylist())
+
+		entry := m3uparser.M3UEntry{
+			URI:   uri,
+			Title: channel.sources.MediaName(),
+			Tags:  make([]m3uparser.M3UTag, 0),
+		}
+		entry.Tags = append(entry.Tags, channel.sources.M3UTags()...)
+		if !channel.sources.IsRadio() {
+			entry.AddTag("KODIPROP", "inputstream=inputstream.adaptive")
+			entry.AddTag("KODIPROP", "inputstream.adaptive.manifest_type=hls")
+		}
+		w.Write([]byte(entry.String() + "\n"))
+	}
 }
 
 func (p *ChannelsHandler) manifestRequest(w http.ResponseWriter, r *http.Request) {
