@@ -9,7 +9,7 @@ import (
 
 	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/auth/authproviders"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
+	"github.com/a13labs/m3uproxy/pkg/provider"
 	"github.com/gorilla/mux"
 )
 
@@ -208,7 +208,7 @@ func (h *APIHandler) playlistAPIRequest(w http.ResponseWriter, r *http.Request) 
 		}
 		defer file.Close()
 
-		config := m3uprovider.PlaylistConfig{}
+		config := provider.PlaylistConfig{}
 		err = json.NewDecoder(file).Decode(&config)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -224,7 +224,7 @@ func (h *APIHandler) playlistAPIRequest(w http.ResponseWriter, r *http.Request) 
 		w.Write([]byte(data))
 		return
 	case http.MethodPost:
-		playlist := m3uprovider.PlaylistConfig{}
+		playlist := provider.PlaylistConfig{}
 		err := json.NewDecoder(r.Body).Decode(&playlist)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)

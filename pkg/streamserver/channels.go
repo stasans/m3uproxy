@@ -10,7 +10,7 @@ import (
 	"github.com/a13labs/m3uproxy/pkg/auth"
 	"github.com/a13labs/m3uproxy/pkg/logger"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider"
+	"github.com/a13labs/m3uproxy/pkg/provider"
 	"github.com/a13labs/m3uproxy/pkg/sources"
 	"github.com/gorilla/mux"
 )
@@ -28,7 +28,7 @@ type streamEntry struct {
 type ChannelsHandler struct {
 	config         *ServerConfig
 	m3uCache       *m3uparser.M3UPlaylist
-	playlistConfig *m3uprovider.PlaylistConfig
+	playlistConfig *provider.PlaylistConfig
 	channelsMux    sync.Mutex
 	channels       map[string]*streamEntry
 }
@@ -51,12 +51,12 @@ func (p *ChannelsHandler) RegisterRoutes(r *mux.Router) *mux.Router {
 
 func (p *ChannelsHandler) loadConfig() error {
 	var err error
-	p.playlistConfig, err = m3uprovider.LoadPlaylistConfig(p.config.data.Playlist)
+	p.playlistConfig, err = provider.LoadPlaylistConfig(p.config.data.Playlist)
 	if err != nil {
 		return err
 	}
 
-	p.m3uCache, err = m3uprovider.Load(p.playlistConfig)
+	p.m3uCache, err = provider.Load(p.playlistConfig)
 	if err != nil {
 		return err
 	}

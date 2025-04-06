@@ -1,4 +1,4 @@
-package m3uprovider
+package provider
 
 import (
 	"encoding/json"

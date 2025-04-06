@@ -23,7 +23,6 @@ const Config = ({ show, onClose, onSave }) => {
         }
     };
 
-
     return (
         <Modal show={show} onClose={onClose}>
             <Modal.Header closeButton onHide={onClose}>
