@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 
-const Config = ({ show, onClose, onSave }) => {
+const Config = ({ show, onClose }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
 
@@ -16,7 +16,6 @@ const Config = ({ show, onClose, onSave }) => {
         if (username && password) {
             localStorage.setItem('username', username);
             localStorage.setItem('password', password);
-            onSave();
             onClose();
         } else {
             alert('Please enter both username and password.');
