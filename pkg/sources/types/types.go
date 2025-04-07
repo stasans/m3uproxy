@@ -33,5 +33,5 @@ type BaseStreamSource struct {
 	conn             *upstream.UpstreamConnection
 	disableRemap     bool
 	active           bool
-	mux              *sync.Mutex
+	mux              *sync.RWMutex
 }

@@ -29,7 +29,7 @@ type ChannelsHandler struct {
 	config         *ServerConfig
 	m3uCache       *m3uparser.M3UPlaylist
 	playlistConfig *provider.PlaylistConfig
-	channelsMux    sync.Mutex
+	channelsMux    sync.RWMutex
 	channels       map[string]*streamEntry
 }
 
@@ -37,7 +37,7 @@ func NewChannelsHandler(config *ServerConfig) *ChannelsHandler {
 	return &ChannelsHandler{
 		config:      config,
 		channels:    make(map[string]*streamEntry),
-		channelsMux: sync.Mutex{},
+		channelsMux: sync.RWMutex{},
 	}
 }
 
@@ -103,14 +103,14 @@ func (p *ChannelsHandler) loadConfig() error {
 
 func (p *ChannelsHandler) getActiveChannels() []*streamEntry {
 	// get a list of all active streams
-	p.channelsMux.Lock()
+	p.channelsMux.RLock()
 	activeChannels := make([]*streamEntry, 0)
 	for _, channel := range p.channels {
 		if channel.sources.Active() {
 			activeChannels = append(activeChannels, channel)
 		}
 	}
-	p.channelsMux.Unlock()
+	p.channelsMux.RUnlock()
 	// Sort channels by index
 	for i := 0; i < len(activeChannels); i++ {
 		for j := i + 1; j < len(activeChannels); j++ {
@@ -272,8 +272,8 @@ func (p *ChannelsHandler) manifestRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	p.channelsMux.Lock()
-	defer p.channelsMux.Unlock()
+	p.channelsMux.RLock()
+	defer p.channelsMux.RUnlock()
 
 	channel, ok := p.channels[channelId]
 	if !ok {
@@ -312,8 +312,8 @@ func (p *ChannelsHandler) mediaRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.channelsMux.Lock()
-	defer p.channelsMux.Unlock()
+	p.channelsMux.RLock()
+	defer p.channelsMux.RUnlock()
 
 	channel, ok := p.channels[channelId]
 	if !ok {

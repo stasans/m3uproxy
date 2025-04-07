@@ -115,7 +115,7 @@ func NewSource(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) {
 				radio:            radio != "",
 				conn:             conn,
 				disableRemap:     disableRemap,
-				mux:              &sync.Mutex{},
+				mux:              &sync.RWMutex{},
 			},
 		}, nil
 	default:
@@ -128,7 +128,7 @@ func NewSource(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) {
 				radio:            radio != "",
 				conn:             conn,
 				disableRemap:     disableRemap,
-				mux:              &sync.Mutex{},
+				mux:              &sync.RWMutex{},
 			},
 		}, nil
 	}

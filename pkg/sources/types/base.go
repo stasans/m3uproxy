@@ -33,43 +33,45 @@ func (s *BaseStreamSource) HealthCheck() error {
 }
 
 func (s *BaseStreamSource) Active() bool {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.active
 }
 
 func (s *BaseStreamSource) MediaType() contenttype.MediaType {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.mediaType
 }
 
 func (s *BaseStreamSource) MediaName() string {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.m3u.Title
 }
 
 func (s *BaseStreamSource) M3UTags() m3uparser.M3UTags {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.m3u.Tags
 }
 
 func (s *BaseStreamSource) IsRadio() bool {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.radio
 }
 
 func (s *BaseStreamSource) Url() string {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.m3u.URI
 }
 
 func (s *BaseStreamSource) verify(mediaURI string) (contenttype.MediaType, error) {
+	s.mux.RLock()
 	body, _, ct, err := s.conn.Get("GET", mediaURI)
+	s.mux.RUnlock()
 	if err != nil {
 		return contenttype.MediaType{}, err
 	}

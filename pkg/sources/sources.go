@@ -11,27 +11,21 @@ import (
 
 type Sources struct {
 	sources      []types.StreamSource
-	mux          *sync.Mutex
+	mux          *sync.RWMutex
 	activeSource types.StreamSource
 }
 
 func NewSources() Sources {
 	return Sources{
 		sources:      make([]types.StreamSource, 0),
-		mux:          &sync.Mutex{},
+		mux:          &sync.RWMutex{},
 		activeSource: nil,
 	}
 }
 
-func (s *Sources) Children() []types.StreamSource {
-	s.mux.Lock()
-	defer s.mux.Unlock()
-	return s.sources
-}
-
 func (s *Sources) SourceExists(entry m3uparser.M3UEntry) bool {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 
 	for _, source := range s.sources {
 		if source.Url() == entry.URI {
@@ -58,8 +52,8 @@ func (s *Sources) AddSource(entry m3uparser.M3UEntry, timeout int) (bool, error)
 }
 
 func (s *Sources) GetActiveSource() types.StreamSource {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.activeSource
 }
 
@@ -83,8 +77,8 @@ func (s *Sources) HealthCheck() error {
 }
 
 func (s *Sources) ServeManifest(w http.ResponseWriter, r *http.Request, timeout int) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 
 	if s.activeSource == nil {
 		http.Error(w, "No active stream source", http.StatusServiceUnavailable)
@@ -95,8 +89,8 @@ func (s *Sources) ServeManifest(w http.ResponseWriter, r *http.Request, timeout 
 }
 
 func (s *Sources) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 
 	if s.activeSource == nil {
 		http.Error(w, "No active stream source", http.StatusServiceUnavailable)
@@ -107,14 +101,14 @@ func (s *Sources) ServeMedia(w http.ResponseWriter, r *http.Request, timeout int
 }
 
 func (s *Sources) Active() bool {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	return s.activeSource != nil
 }
 
 func (s *Sources) MediaName() string {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	if s.activeSource != nil {
 		return s.activeSource.MediaName()
 	}
@@ -122,8 +116,8 @@ func (s *Sources) MediaName() string {
 }
 
 func (s *Sources) MasterPlaylist() string {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	if s.activeSource != nil {
 		return s.activeSource.MasterPlaylist()
 	}
@@ -131,8 +125,8 @@ func (s *Sources) MasterPlaylist() string {
 }
 
 func (s *Sources) M3UTags() m3uparser.M3UTags {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	if s.activeSource != nil {
 		return s.activeSource.M3UTags()
 	}
@@ -140,8 +134,8 @@ func (s *Sources) M3UTags() m3uparser.M3UTags {
 }
 
 func (s *Sources) IsRadio() bool {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 	if s.activeSource != nil {
 		return s.activeSource.IsRadio()
 	}
