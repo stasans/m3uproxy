@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
+	"github.com/a13labs/m3uproxy/pkg/provider/types"
 )
 
 type M3UFileConfig struct {

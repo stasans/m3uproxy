@@ -1,10 +1,11 @@
-package streamSources
+package types
 
 import (
 	"net/http"
 	"sync"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
+	"github.com/a13labs/m3uproxy/pkg/upstream"
 	"github.com/elnormous/contenttype"
 )
 
@@ -25,26 +26,12 @@ type BaseStreamSource struct {
 	StreamSource
 	mediaType        contenttype.MediaType
 	m3u              m3uparser.M3UEntry
-	headers          http.Header
+	headers          map[string]string // Changed from http.Header to map[string]string for fasthttp compatibility
 	httpProxy        string
 	forceKodiHeaders bool
 	radio            bool
-	client           *http.Client
+	conn             *upstream.UpstreamConnection
 	disableRemap     bool
 	active           bool
-	mux              *sync.Mutex
-}
-
-type M3UStreamSource struct {
-	BaseStreamSource
-}
-
-type MPDStreamSource struct {
-	BaseStreamSource
-}
-
-type Sources struct {
-	sources      []StreamSource
-	mux          *sync.Mutex
-	activeSource StreamSource
+	mux              *sync.RWMutex
 }

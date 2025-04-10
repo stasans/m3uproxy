@@ -7,7 +7,7 @@ import (
 	"net/url"
 
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	types "github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
+	types "github.com/a13labs/m3uproxy/pkg/provider/types"
 )
 
 const (

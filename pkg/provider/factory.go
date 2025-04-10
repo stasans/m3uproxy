@@ -1,13 +1,13 @@
-package m3uprovider
+package provider
 
 import (
 	"errors"
 
 	"github.com/a13labs/m3uproxy/pkg/logger"
 	"github.com/a13labs/m3uproxy/pkg/m3uparser"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider/file"
-	"github.com/a13labs/m3uproxy/pkg/m3uprovider/iptvorg"
-	types "github.com/a13labs/m3uproxy/pkg/m3uprovider/types"
+	"github.com/a13labs/m3uproxy/pkg/provider/file"
+	"github.com/a13labs/m3uproxy/pkg/provider/iptvorg"
+	types "github.com/a13labs/m3uproxy/pkg/provider/types"
 )
 
 func NewProvider(config ProviderConfig) types.M3UProvider {
