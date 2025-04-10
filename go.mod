@@ -2,8 +2,6 @@ module github.com/a13labs/m3uproxy
 
 go 1.23
 
-toolchain go1.23.4
-
 require (
 	github.com/elnormous/contenttype v1.0.4
 	github.com/golang-jwt/jwt/v5 v5.2.1
