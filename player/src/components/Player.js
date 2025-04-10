@@ -67,8 +67,6 @@ class Player extends Component {
         }
 
         this.player = new ShakaPlayer();
-        this.player.configure('streaming.bufferingGoal', 5);
-        this.player.configure('streaming.rebufferingGoal', 3);
         this.player.addEventListener('error', (event) => {
             console.error('Shaka Player Error:', event.detail);
         });
