@@ -1,6 +1,6 @@
 module github.com/a13labs/m3uproxy
 
-go 1.23
+go 1.22
 
 require (
 	github.com/elnormous/contenttype v1.0.4
