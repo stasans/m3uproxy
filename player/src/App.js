@@ -106,8 +106,8 @@ class App extends Component {
 
             this.channelInputTimeout = setTimeout(() => {
                 const newChannelNum = this.channelNum - 1;
-                this.channelNum = 0;
                 this.playlistRef.current.changeChannel(newChannelNum);
+                this.channelNum = 0;
                 clearTimeout(this.channelInputTimeout);
             }, 3000);
         }
@@ -116,7 +116,6 @@ class App extends Component {
     setCurrentChannel = (channel) => {
 
         this.setState({ currentChannel: channel });
-        this.channelNum = channel.number + 1;
         this.overlayRef.current.setChannelName(channel.name);
         this.overlayRef.current.setChannelNumber(channel.number + 1);
         this.overlayRef.current.showChannelName(true);
