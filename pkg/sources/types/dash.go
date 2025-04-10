@@ -59,8 +59,8 @@ func (s *MPDStreamSource) remap(body []byte, w http.ResponseWriter, orig *url.UR
 				if len(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL) == 0 {
 					uri := new(url.URL)
 					uri.Scheme = orig.Scheme
-					uri.Host = string(orig.Host)
-					basePath := path.Dir(string(orig.Path))
+					uri.Host = orig.Host
+					basePath := path.Dir(orig.Path)
 					uri.Path = path.Join(basePath, uri.Path)
 					remap := base64.URLEncoding.EncodeToString([]byte(uri.String()))
 					mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL = append(mpdPlaylist.Period[i].AdaptationSets[j].Representations[k].BaseURL, &mpd.BaseURL{Value: fmt.Sprintf("media/%s/", remap)})
