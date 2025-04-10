@@ -63,7 +63,7 @@ func (s *M3U8StreamSource) remap(body []byte, w http.ResponseWriter, uri *url.UR
 				line = strings.TrimRight(line, "\r\n")
 				if !strings.HasPrefix(line, "http") {
 					p := path.Dir(uri.EscapedPath())
-					line = uri.Scheme + "://" + path.Join(string(uri.Host), path.Join(p, line))
+					line = uri.Scheme + "://" + path.Join(uri.Host, path.Join(p, line))
 				}
 
 				remap := base64.URLEncoding.EncodeToString([]byte(line))
