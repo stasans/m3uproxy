@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/a13labs/m3uproxy/pkg/auth"
+	"github.com/a13labs/a13core/auth"
 )
 
 func bearerAuth(next func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {

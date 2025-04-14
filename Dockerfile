@@ -1,5 +1,5 @@
 # Stage 1: Build the Go binary
-FROM golang:1.23.0-alpine AS go-builder
+FROM golang:1.23.4-alpine AS go-builder
 
 # Set the working directory
 WORKDIR /app
@@ -19,7 +19,7 @@ RUN go build -o m3uproxy server/main.go
 RUN go build -o m3uproxycli cli/main.go
 
 # Stage 2: Build the React SPA
-FROM node:18-alpine AS spa-builder
+FROM node:22-alpine AS spa-builder
 
 # Set the working directory
 WORKDIR /app

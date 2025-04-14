@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/a13labs/m3uproxy/pkg/auth"
-	"github.com/a13labs/m3uproxy/pkg/logger"
+	"github.com/a13labs/a13core/auth"
+	"github.com/a13labs/a13core/logger"
 	"github.com/oschwald/geoip2-golang"
 
 	"github.com/gorilla/mux"
