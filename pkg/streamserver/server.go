@@ -106,7 +106,7 @@ func (s *StreamServer) Run() {
 		go func() {
 			logger.Infof("Server listening on %s.", server.Addr)
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.Errorf("Server failed:", err)
+				logger.Errorf("Server failed: %v", err)
 			}
 		}()
 

@@ -89,7 +89,7 @@ func NewSource(entry m3uparser.M3UEntry, timeout int) (StreamSource, error) {
 	// Clear non-standard tags
 	entry.ClearTags()
 
-	conn := upstream.NewUpstreamConnection(headers, timeout)
+	conn := upstream.NewUpstreamConnection(headers, proxy, timeout)
 
 	uri, ct, err := conn.Check("GET", entry.URI)
 	if err != nil {

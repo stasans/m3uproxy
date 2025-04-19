@@ -9,12 +9,27 @@ import (
 
 	"github.com/elnormous/contenttype"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpproxy"
 )
 
-func NewUpstreamConnection(headers map[string]string, timeout int) *UpstreamConnection {
+func NewUpstreamConnection(headers map[string]string, proxy string, timeout int) *UpstreamConnection {
+	var dial fasthttp.DialFunc
+
+	if proxy != "" {
+		proxyURL, err := url.Parse(proxy)
+		if err != nil {
+			panic(fmt.Sprintf("Invalid proxy URL: %s", err))
+		}
+
+		dial = fasthttpproxy.FasthttpHTTPDialer(fmt.Sprintf("%s:%s", proxyURL.Host, proxyURL.Path))
+	} else {
+		dial = fasthttp.Dial
+	}
+
 	return &UpstreamConnection{
 		client: &fasthttp.Client{
 			ReadTimeout: time.Duration(timeout) * time.Second,
+			Dial:        dial,
 		},
 		headers: headers,
 	}
