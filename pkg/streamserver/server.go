@@ -48,10 +48,9 @@ func (s *StreamServer) Run() {
 
 	logger.Init(s.config.data.LogFile)
 
-	s.api = NewAPIHandler(s.config, &s.restartChan)
-	s.api.RegisterRoutes(s.router)
-
 	s.channels = NewChannelsHandler(s.config)
+	s.api = NewAPIHandler(s.config, &s.restartChan, s.channels)
+	s.api.RegisterRoutes(s.router)
 	s.channels.RegisterRoutes(s.router)
 
 	s.epg = NewEPGHandler(s.config)

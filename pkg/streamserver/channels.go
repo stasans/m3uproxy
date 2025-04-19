@@ -329,6 +329,12 @@ func (p *ChannelsHandler) mediaRequest(w http.ResponseWriter, r *http.Request) {
 	channel.sources.ServeMedia(w, r, p.config.data.Timeout)
 }
 
+func (p *ChannelsHandler) GetChannel(id string) *streamEntry {
+	p.channelsMux.RLock()
+	defer p.channelsMux.RUnlock()
+	return p.channels[id]
+}
+
 func monitorWorker(streams <-chan *streamEntry, stop <-chan bool, wg *sync.WaitGroup) {
 
 	defer wg.Done()

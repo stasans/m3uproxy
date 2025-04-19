@@ -15,6 +15,10 @@ type Sources struct {
 	activeSource types.StreamSource
 }
 
+type SourcesDiag struct {
+	Sources []types.StreamSourceDiag `json:"sources"`
+}
+
 func NewSources() Sources {
 	return Sources{
 		sources:      make([]types.StreamSource, 0),
@@ -55,6 +59,20 @@ func (s *Sources) GetActiveSource() types.StreamSource {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
 	return s.activeSource
+}
+
+func (s *Sources) Diagnostic() SourcesDiag {
+	s.mux.RLock()
+	defer s.mux.RUnlock()
+
+	result := SourcesDiag{
+		Sources: make([]types.StreamSourceDiag, 0),
+	}
+	for _, source := range s.sources {
+		result.Sources = append(result.Sources, source.Diagnostic())
+	}
+
+	return result
 }
 
 func (s *Sources) HealthCheck() error {

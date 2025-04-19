@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"errors"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -30,6 +31,34 @@ func (s *BaseStreamSource) HealthCheck() error {
 	s.mux.Unlock()
 
 	return err
+}
+
+func (s *BaseStreamSource) Diagnostic() StreamSourceDiag {
+	uri, _, err := s.conn.Check("GET", s.m3u.URI)
+	diag := StreamSourceDiag{
+		Entry:       s.m3u,
+		Headers:     s.headers,
+		HttpProxy:   s.httpProxy,
+		Active:      false,
+		Diagnostics: make([]HttpDiags, 0),
+	}
+	if err != nil {
+		diag.Diagnostics = append(diag.Diagnostics, HttpDiags{
+			Url:    uri,
+			Status: http.StatusBadRequest,
+			Error:  err.Error(),
+		})
+		return diag
+	}
+
+	s.mux.Lock()
+	if uri != s.m3u.URI {
+		s.m3u.URI = uri
+	}
+	s.mux.Unlock()
+
+	s.verifyWithDiags(s.m3u.URI, &diag)
+	return diag
 }
 
 func (s *BaseStreamSource) Active() bool {
@@ -108,4 +137,66 @@ func (s *BaseStreamSource) verify(mediaURI string) (contenttype.MediaType, error
 	}
 
 	return ct, nil
+}
+
+func (s *BaseStreamSource) verifyWithDiags(mediaURI string, diag *StreamSourceDiag) {
+	s.mux.RLock()
+	body, status, ct, err := s.conn.Get("GET", mediaURI)
+	s.mux.RUnlock()
+	if err != nil {
+		diag.Diagnostics = append(diag.Diagnostics, HttpDiags{
+			Url:    mediaURI,
+			Status: status,
+			Error:  err.Error(),
+		})
+		return
+	}
+	httpDiag := HttpDiags{
+		Url:       mediaURI,
+		Body:      string(body),
+		MediaType: ct.String(),
+		Status:    status,
+	}
+
+	if !ct.MatchesAny(supportedMediaTypes...) {
+		httpDiag.Error = "invalid content type"
+		diag.Diagnostics = append(diag.Diagnostics, httpDiag)
+		return
+	}
+
+	if ct.Subtype == "vnd.apple.mpegurl" || ct.Subtype == "x-mpegurl" {
+		m3uPlaylist, err := m3uparser.DecodeFromReader(bytes.NewReader(body))
+		if err != nil {
+			httpDiag.Error = err.Error()
+			diag.Diagnostics = append(diag.Diagnostics, httpDiag)
+			return
+		}
+
+		if len(m3uPlaylist.Entries) == 0 {
+			httpDiag.Error = "empty playlist"
+			diag.Diagnostics = append(diag.Diagnostics, httpDiag)
+			return
+		}
+
+		uri, _ := url.Parse(m3uPlaylist.Entries[0].URI)
+
+		if uri.Scheme == "" {
+			originalURI, err := url.Parse(mediaURI)
+			if err != nil {
+				httpDiag.Error = err.Error()
+				diag.Diagnostics = append(diag.Diagnostics, httpDiag)
+				return
+			}
+			uri.Scheme = originalURI.Scheme
+			uri.Host = originalURI.Host
+			if !strings.HasPrefix(uri.Path, "/") {
+				uri.Path = path.Join(path.Dir(originalURI.Path), uri.Path)
+			}
+		}
+
+		s.verifyWithDiags(uri.String(), diag)
+	}
+
+	diag.Diagnostics = append(diag.Diagnostics, httpDiag)
+	diag.Active = status == http.StatusOK
 }

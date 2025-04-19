@@ -16,13 +16,15 @@ import (
 type APIHandler struct {
 	config      *ServerConfig
 	restartChan *chan bool
+	channels    *ChannelsHandler
 }
 
-func NewAPIHandler(config *ServerConfig, restartChan *chan bool) *APIHandler {
+func NewAPIHandler(config *ServerConfig, restartChan *chan bool, channels *ChannelsHandler) *APIHandler {
 
 	return &APIHandler{
 		config:      config,
 		restartChan: restartChan,
+		channels:    channels,
 	}
 }
 
@@ -33,6 +35,7 @@ func (h *APIHandler) RegisterRoutes(r *mux.Router) *mux.Router {
 	r.HandleFunc("/api/v1/playlist", adminAccess(h.playlistAPIRequest))
 	r.HandleFunc("/api/v1/users", adminAccess(h.usersAPIRequest))
 	r.HandleFunc("/api/v1/user/{id}", adminAccess(h.userAPIRequest))
+	r.HandleFunc("/api/v1/diags/{id}", adminAccess(h.diagnosticRequest))
 	return r
 }
 
@@ -258,4 +261,30 @@ func (h *APIHandler) reloadRequest(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func (h *APIHandler) diagnosticRequest(w http.ResponseWriter, r *http.Request) {
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	w.Header().Set("Content-Type", "application/text")
+	w.WriteHeader(http.StatusOK)
+
+	if h.channels == nil {
+		return
+	}
+
+	channel := h.channels.GetChannel(id)
+	if channel == nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	data, err := json.Marshal(channel.sources.Diagnostic())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Write([]byte(data))
 }
