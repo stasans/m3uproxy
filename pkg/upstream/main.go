@@ -21,7 +21,7 @@ func NewUpstreamConnection(headers map[string]string, proxy string, timeout int)
 			panic(fmt.Sprintf("Invalid proxy URL: %s", err))
 		}
 
-		dial = fasthttpproxy.FasthttpHTTPDialer(fmt.Sprintf("%s:%s", proxyURL.Host, proxyURL.Path))
+		dial = fasthttpproxy.FasthttpHTTPDialer(proxyURL.Host)
 	} else {
 		dial = fasthttp.Dial
 	}
