@@ -9,16 +9,16 @@ import (
 )
 
 func init() {
-	usersCmd.AddCommand(addCmd)
+	usersCmd.AddCommand(roleCmd)
 }
 
-var addCmd = &cobra.Command{
-	Use:   "add",
-	Short: "Add a new user",
+var roleCmd = &cobra.Command{
+	Use:   "role",
+	Short: "Change a user role",
 	Run: func(cmd *cobra.Command, args []string) {
 		// Add your code here to handle the "add" command
 		if len(args) != 2 {
-			cmd.PrintErrln("Usage: m3uproxy-cli users add <username> <password> <role>")
+			cmd.PrintErrln("Usage: m3uproxy-cli users role <username> <role>")
 			os.Exit(1)
 		}
 		err := restapi.Authenticate()
@@ -27,17 +27,13 @@ var addCmd = &cobra.Command{
 			return
 		}
 		username := args[0]
-		password := args[1]
-		role := "view"
-		if len(args) == 3 {
-			role = args[2]
-		}
+		role := args[1]
 		body := map[string]string{
 			"username": username,
-			"password": password,
+			"password": "",
 			"role":     role,
 		}
-		resp, err := restapi.Call("POST", fmt.Sprintf("/api/v1/user/%s", username), body)
+		resp, err := restapi.Call("PUT", fmt.Sprintf("/api/v1/user/%s", username), body)
 		if err != nil {
 			fmt.Println("Error:", err)
 			os.Exit(1)

@@ -35,7 +35,7 @@ func (h *APIHandler) RegisterRoutes(r *mux.Router) *mux.Router {
 	r.HandleFunc("/api/v1/playlist", adminAccess(h.playlistAPIRequest))
 	r.HandleFunc("/api/v1/users", adminAccess(h.usersAPIRequest))
 	r.HandleFunc("/api/v1/user/{id}", adminAccess(h.userAPIRequest))
-	r.HandleFunc("/api/v1/diags/{id}", adminAccess(h.diagnosticRequest))
+	r.HandleFunc("/api/v1/diags/channel/{id}", adminAccess(h.diagnosticChannelRequest))
 	return r
 }
 
@@ -170,10 +170,16 @@ func (h *APIHandler) userAPIRequest(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		err = auth.ChangePassword(username, newUser.Password)
-		if err != nil {
+		if newUser.Username != username {
 			w.WriteHeader(http.StatusBadRequest)
 			return
+		}
+		if newUser.Password != "" {
+			err = auth.ChangePassword(username, newUser.Password)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
 		}
 		if newUser.Role != "" {
 			err = auth.SetRole(username, newUser.Role)
@@ -263,7 +269,7 @@ func (h *APIHandler) reloadRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *APIHandler) diagnosticRequest(w http.ResponseWriter, r *http.Request) {
+func (h *APIHandler) diagnosticChannelRequest(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	id := vars["id"]

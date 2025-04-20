@@ -16,7 +16,7 @@ RUN chmod +x scripts/*
 
 # Build the Go binaries
 RUN go build -o m3uproxy server/main.go
-RUN go build -o m3uproxycli cli/main.go
+RUN go build -o m3uproxy-cli cli/main.go
 
 # Stage 2: Build the React SPA
 FROM node:22-alpine AS spa-builder
@@ -41,7 +41,7 @@ FROM alpine:latest
 
 # Copy Go binaries and other files from the go-builder stage
 COPY --from=go-builder /app/m3uproxy /app/m3uproxy
-COPY --from=go-builder /app/m3uproxycli /app/m3uproxycli
+COPY --from=go-builder /app/m3uproxy-cli /app/m3uproxy-cli
 COPY --from=go-builder /app/conf /app/conf
 COPY --from=go-builder /app/scripts/entrypoint.sh /app/entrypoint.sh
 
